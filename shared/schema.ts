@@ -34,9 +34,11 @@ export const messages = pgTable("messages", {
 
 export const signals = pgTable("signals", {
   id: serial("id").primaryKey(),
+  signalId: text("signal_id").notNull().unique(), // Unique fingerprint
   messageId: integer("message_id").references(() => messages.id),
+  channelId: integer("channel_id").references(() => channels.id),
   rawText: text("raw_text").notNull(),
-  source: text("source").notNull(), // 'text' or 'ocr'
+  source: text("source").notNull(), // 'text', 'ocr', 'image'
   intent: text("intent").notNull(),
   pair: text("pair"),
   action: text("action"),
@@ -48,9 +50,18 @@ export const signals = pgTable("signals", {
   modifications: jsonb("modifications"),
   confidence: real("confidence").notNull(),
   manualRuleApplied: boolean("manual_rule_applied").default(false),
+  status: text("status").notNull().default("pending"), // pending, executed, ignored, failed
+  processedAt: timestamp("processed_at"),
   createdAt: timestamp("created_at").defaultNow(),
   channelName: text("channel_name"),
   externalMessageId: text("external_message_id"),
+  imagePath: text("image_path"),
+  imageCaption: text("image_caption"),
+  isVerified: boolean("is_verified").default(false),
+  userId: integer("user_id").references(() => users.id),
+  signalHash: text("signal_hash").notNull(), // Prevent duplicates
+  retryCount: integer("retry_count").default(0),
+  errorMessage: text("error_message")
 });
 
 export const trades = pgTable("trades", {
@@ -106,8 +117,57 @@ export const userSettings = pgTable("user_settings", {
   enableSignalCopier: boolean("enable_signal_copier").default(true),
   enabledChannels: integer("enabled_channels").array().default([]),
   tradeFilters: jsonb("trade_filters"),
+  executionMode: text("execution_mode").default("auto"), // shadow, semi-auto, auto
+  minConfidence: real("min_confidence").default(0.85),
+  timezone: text("timezone").default("UTC"),
+  maxDailyTrades: integer("max_daily_trades").default(10),
+  maxDrawdown: real("max_drawdown").default(10.0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Role-Based Access Control
+export const roles = pgTable("roles", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  permissions: jsonb("permissions").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const userRoles = pgTable("user_roles", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  roleId: integer("role_id").references(() => roles.id).notNull(),
+  assignedAt: timestamp("assigned_at").defaultNow(),
+});
+
+// Provider Performance Scoring
+export const providerPerformance = pgTable("provider_performance", {
+  id: serial("id").primaryKey(),
+  channelId: integer("channel_id").references(() => channels.id).notNull(),
+  period: text("period").notNull(),
+  totalSignals: integer("total_signals").default(0),
+  executedTrades: integer("executed_trades").default(0),
+  winningTrades: integer("winning_trades").default(0),
+  totalPips: real("total_pips").default(0),
+  winRate: real("win_rate").default(0),
+  trustScore: real("trust_score").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Signal Processing Queue
+export const signalQueue = pgTable("signal_queue", {
+  id: serial("id").primaryKey(),
+  signalId: text("signal_id").notNull(),
+  userId: integer("user_id").references(() => users.id),
+  priority: integer("priority").default(5),
+  status: text("status").notNull().default("pending"),
+  retryCount: integer("retry_count").default(0),
+  scheduledAt: timestamp("scheduled_at").defaultNow(),
+  processedAt: timestamp("processed_at"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const auditLogs = pgTable("audit_logs", {
