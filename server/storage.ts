@@ -339,7 +339,22 @@ export class MemStorage implements IStorage {
   async createSignal(insertSignal: InsertSignal): Promise<Signal> {
     const signal: Signal = {
       id: this.currentSignalId++,
-      ...insertSignal,
+      messageId: insertSignal.messageId || null,
+      rawText: insertSignal.rawText,
+      source: insertSignal.source,
+      intent: insertSignal.intent,
+      pair: insertSignal.pair || null,
+      action: insertSignal.action || null,
+      entry: insertSignal.entry || null,
+      sl: insertSignal.sl || null,
+      tp: insertSignal.tp || null,
+      orderType: insertSignal.orderType || null,
+      volumePercent: insertSignal.volumePercent || null,
+      modifications: insertSignal.modifications || null,
+      confidence: insertSignal.confidence,
+      manualRuleApplied: insertSignal.manualRuleApplied || false,
+      channelName: insertSignal.channelName || null,
+      externalMessageId: insertSignal.externalMessageId || null,
       createdAt: new Date()
     };
     this.signals.set(signal.id, signal);
