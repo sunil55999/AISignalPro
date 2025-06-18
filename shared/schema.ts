@@ -210,12 +210,16 @@ export const insertMessageSchema = createInsertSchema(messages).omit({
 export const insertSignalSchema = createInsertSchema(signals).omit({
   id: true,
   createdAt: true,
+  processedAt: true,
+  isVerified: true,
+  retryCount: true,
 });
 
 export const insertTradeSchema = createInsertSchema(trades).omit({
   id: true,
   createdAt: true,
   executedAt: true,
+  status: true,
 });
 
 export const insertManualRuleSchema = createInsertSchema(manualRules).omit({

@@ -206,6 +206,11 @@ export class MemStorage implements IStorage {
       enableSignalCopier: true,
       enabledChannels: [goldChannel.id, forexChannel.id],
       tradeFilters: { minConfidence: 0.8 },
+      executionMode: "auto",
+      minConfidence: 0.85,
+      timezone: "UTC",
+      maxDailyTrades: 10,
+      maxDrawdown: 10.0,
       createdAt: new Date(),
       updatedAt: new Date()
     };
