@@ -35,6 +35,7 @@ export const messages = pgTable("messages", {
 export const signals = pgTable("signals", {
   id: serial("id").primaryKey(),
   signalId: text("signal_id").notNull().unique(), // Unique fingerprint
+  signalHash: text("signal_hash").notNull(), // Hash for deduplication
   messageId: integer("message_id").references(() => messages.id),
   channelId: integer("channel_id").references(() => channels.id),
   rawText: text("raw_text").notNull(),
@@ -59,7 +60,6 @@ export const signals = pgTable("signals", {
   imageCaption: text("image_caption"),
   isVerified: boolean("is_verified").default(false),
   userId: integer("user_id").references(() => users.id),
-  signalHash: text("signal_hash").notNull(), // Prevent duplicates
   retryCount: integer("retry_count").default(0),
   errorMessage: text("error_message")
 });
