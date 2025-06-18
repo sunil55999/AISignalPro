@@ -1,0 +1,140 @@
+Build an AI signal parser that exceeds the capabilities of commercial tools like telegram-signals-copier.com by understanding and executing text and image-based trading instructions with high accuracy, full automation, and future learning support.
+
+🎯 OBJECTIVE
+Develop a hybrid signal parser that:
+
+Extracts structured trade data from both text messages and screenshots
+
+Understands complex instructions, order modifications, and partial actions
+
+Supports both AI-based learning and user-defined rule mappings
+
+Can be updated and trained from a future Admin Panel UI
+
+📥 INPUT SOURCES
+Telegram Message (Text or Captioned Image)
+
+OCR Extracted Text from Signal Image
+
+Optional Metadata: Date, channel name, message ID, attached media filename
+
+📤 TARGET OUTPUT (Structured JSON)
+json
+Copy
+Edit
+{
+  "intent": "open_trade",                 // or "modify_sl", "close_partial", etc.
+  "pair": "XAUUSD",
+  "action": "buy",                        // or "sell", "buystop", "sellstop"
+  "entry": 1985.0,
+  "sl": 1975.0,
+  "tp": [1995.0, 2005.0],
+  "order_type": "market",                // or "pending", "partial", "reopen"
+  "volume_percent": null,
+  "modifications": {
+    "sl_to_be": true,
+    "increase_sl": 10.0,                // value in pips
+    "tp_update": [2000.0, 2010.0],
+    "cancel": false
+  },
+  "source": "ocr",                      // or "text"
+  "confidence": 0.94,
+  "manual_rule_applied": false,
+  "raw_text": "GOLD BUY NOW @1985, SL 1975, TP 1995 2005"
+}
+🧠 CORE CAPABILITIES TO SUPPORT
+✅ Order Types
+Market orders: “Gold buy now”
+
+Pending orders: “Buy Stop @1985”
+
+Partial orders: “Close 50%”, “TP1 hit, secure some profits”
+
+Reopen orders: “Reopen GBPJPY @ 155.20”
+
+✅ Order Actions
+SL to BE, Move SL to 1.0920
+
+Increase SL to 20 pips, Widen SL
+
+Update TP1 to 1995, Change TP to 2000
+
+Cancel signal, Don’t enter
+
+✅ Market Execution Detection
+Detect real-time action words: "BUY GOLD NOW", "Sell EURUSD immediately", etc.
+
+✅ Source-Aware Parsing
+Label whether the message was parsed from:
+
+Raw text
+
+OCR (image-based signal)
+
+Ensure dual-model support if needed
+
+🧠 TRAINING MODES
+Mode	Description
+✅ AI-Driven	Fine-tuned model trained on labeled messages/images
+✅ Manual Rules	Admin defines pattern → action mapping (per channel)
+✅ Hybrid	Use AI, fallback to rules if confidence < 0.85
+
+🔄 LEARNING FLOW
+mermaid
+Copy
+Edit
+graph TD
+    A[Telegram Message/Image] --> B{Text or Image}
+    B -->|Text| C[Run AI Text Parser]
+    B -->|Image| D[Run OCR → AI Parser]
+    C --> E[Check Confidence]
+    D --> E
+    E -->|< 0.85| F[Check Manual Rule DB]
+    F -->|Rule Match| G[Structured Output]
+    E -->|>= 0.85| G
+⚙️ TRAINING DATA FORMAT
+json
+Copy
+Edit
+{
+  "message": "SL to BE and close 50% now",
+  "image_path": null,
+  "intent": "modify_and_partial_close",
+  "pair": "XAUUSD",
+  "volume_percent": 50,
+  "sl_to_be": true,
+  "source": "text"
+}
+For image-based signals:
+
+json
+Copy
+Edit
+{
+  "ocr_text": "SELL XAUUSD @ 1980 SL 1992 TP 1970",
+  "image_path": "photo_234.jpg",
+  "intent": "open_trade",
+  "source": "ocr"
+}
+🛡️ SAFETY FEATURES
+confidence_threshold: Prevents execution if AI parser is unsure
+
+manual_review_flag: Auto-mark low-confidence or ambiguous results
+
+admin_override: Allow manual corrections via admin UI before action
+
+🛠️ FUTURE FEATURES (Admin Panel Integration)
+Feature	Purpose
+🧠 Train-from-Dashboard	Upload labeled messages and retrain or fine-tune model
+🛠 Rule Creator	"If message contains 'SL to BE' → Modify SL to Entry"
+📊 Parser Stats + Accuracy	Track parser confidence, corrections, errors
+🔄 Manual Correction Interface	Fix wrong outputs and re-submit as training data
+
+🧱 Recommended Stack
+Component	Tool
+OCR Engine	PaddleOCR / EasyOCR / TrOCR (open-source)
+AI Parser	HuggingFace Transformers, spaCy NER, or custom LLM
+Rule Engine	JSON/DB-based key-value rules per channel/user
+Parser Backend	FastAPI or Flask API
+Training Interface	Flask Admin Panel, or integrate with LabelStudio
+Signal Storage	PostgreSQL or MongoD
