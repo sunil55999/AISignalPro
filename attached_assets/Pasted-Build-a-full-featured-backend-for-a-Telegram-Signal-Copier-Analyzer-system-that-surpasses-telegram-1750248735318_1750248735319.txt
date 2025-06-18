@@ -1,0 +1,207 @@
+Build a full-featured backend for a Telegram Signal Copier & Analyzer system that surpasses telegram-signals-copier.com in performance, intelligence, safety, and customization.
+
+🎯 OBJECTIVE
+Design a secure, scalable, modular backend API that:
+
+Processes Telegram messages from 100+ channels in real-time
+
+Passes each message through an AI signal parser or manual rule system
+
+Outputs clean structured trades to be consumed by:
+
+MT5 EA runner (via JSON/sockets)
+
+User dashboards
+
+Admin audit logs
+
+Supports multi-user sessions, channel control, signal performance scoring, and retraining/updating the AI parser
+
+📚 KEY MODULES TO DEVELOP
+1. Message Ingestion Module
+Responsibilities:
+
+Receive real-time messages from userbot or Webhook
+
+Store raw message content in database
+
+Attach metadata (timestamp, channel name, user ID, etc.)
+
+APIs:
+
+http
+Copy
+Edit
+POST /messages/new
+{
+  "message_id": 123,
+  "channel": "@XAUUSDChannel",
+  "content": "Buy Gold now SL 1980 TP 1995",
+  "media_url": null
+}
+2. AI Signal Parser Engine
+Responsibilities:
+
+Feed messages into trained AI parser or OCR pipeline
+
+Fallback to manual rule engine if confidence < threshold
+
+Return structured JSON for trading
+
+Internal Use Only:
+
+python
+Copy
+Edit
+{
+  "pair": "XAUUSD",
+  "action": "buy",
+  "entry": 1985.0,
+  "sl": 1980.0,
+  "tp": [1995, 2000],
+  "intent": "open_trade",
+  "confidence": 0.92,
+  "source": "ocr"
+}
+3. Trade Dispatcher
+Responsibilities:
+
+Push structured trade data to MT5 bridge (file, socket, or local API)
+
+Enforce per-user risk, filters, and account settings
+
+Queue or block if signals are conflicting or duplicate
+
+Signal Output Format for EA:
+
+json
+Copy
+Edit
+{
+  "symbol": "XAUUSD",
+  "action": "buy",
+  "entry": 1985,
+  "sl": 1980,
+  "tp": [1995, 2005],
+  "lot": 0.2,
+  "order_type": "market"
+}
+4. Admin Control System
+Responsibilities:
+
+Enable/disable channels, users, or providers
+
+Upload custom rules, set parser confidence levels
+
+Trigger retraining or override AI result
+
+View signal logs and trade execution reports
+
+APIs:
+
+POST /admin/rules/upload
+
+GET /admin/trades/logs
+
+POST /admin/parser/retrain
+
+PATCH /user/:id/toggle
+
+5. User Control + Settings
+Responsibilities:
+
+Allow user to:
+
+Enable/disable signal copier
+
+Add/remove channels
+
+Adjust risk settings, lot size, trade filter
+
+View parsed signals and trade history
+
+APIs:
+
+POST /user/settings
+
+GET /user/signals
+
+GET /user/alerts
+
+6. Rule-Based Parsing Engine
+Responsibilities:
+
+Custom per-user or per-channel rules
+
+If message contains "SL to BE", return:
+
+json
+Copy
+Edit
+{ "intent": "modify_sl", "sl_to_be": true }
+Stored in JSON or DB format
+
+Editable via Admin Panel
+
+7. Performance Tracker & Signal Scoring
+Responsibilities:
+
+Analyze historical signals and trade results
+
+Score providers by:
+
+Hit rate (TP vs SL)
+
+Average RR
+
+Execution latency
+
+Output weekly/monthly reports
+
+APIs:
+
+GET /stats/providers
+
+GET /stats/user/:id/performance
+
+🧰 TECH STACK RECOMMENDED
+Layer	Tool
+Backend Framework	FastAPI (or Flask if preferred)
+Database	PostgreSQL (or SQLite for MVP)
+Signal Parser	Internal AI model + spaCy/Transformer
+OCR for image input	PaddleOCR / EasyOCR
+MT5 Bridge	JSON socket output or local file
+Auth + Admin	JWT / OAuth + Flask-Admin / Replit CMS
+Scheduler	APScheduler / Celery (for reports/retraining)
+
+🔐 SECURITY & PERFORMANCE CONSIDERATIONS
+Concern	Strategy
+User signal isolation	Per-user API key or session tracking
+Trade duplication	De-dupe by message ID + time window
+Command spoofing prevention	Only accept data from trusted scraper
+Admin override safety	Log every change in audit table
+Parser sandboxing	Run inference in separate thread/process
+
+🧠 SCALABILITY ROADMAP
+Phase	Features Added
+✅ Phase 1	Parsing + MT5 Execution + Logs
+🔄 Phase 2	Admin panel, rule engine, multi-user
+🔁 Phase 3	Performance scoring + backtesting
+📈 Phase 4	Auto-training with feedback + alerts
+
+🧾 SAMPLE API FLOW
+mermaid
+Copy
+Edit
+graph TD
+A[Telegram Message Received] --> B[Message Ingested]
+B --> C{Has Image?}
+C -->|Yes| D[Run OCR → AI Parser]
+C -->|No| E[Run Text AI Parser]
+D --> F[Check Confidence]
+E --> F
+F -->|Low| G[Use Manual Rule Engine]
+F -->|High| H[Send to Trade Dispatcher]
+G --> H
+H --> I[Send to MT5 EA]
+H --> J[Store in Trade Log DB]
