@@ -482,6 +482,74 @@ const tradeDispatcher = new TradeDispatcher();
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
+  // ============= USER AUTHENTICATION ENDPOINTS =============
+
+  // Login endpoint
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      
+      if (!username || !password) {
+        return res.status(400).json({ error: "Username and password required" });
+      }
+      
+      const users = await storage.getUsers();
+      const user = users.find(u => u.username === username && u.password === password);
+      
+      if (!user) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      
+      if (!user.isActive) {
+        return res.status(403).json({ error: "Account is disabled" });
+      }
+      
+      // Create audit log for login
+      await storage.createAuditLog({
+        userId: user.id,
+        action: "LOGIN",
+        entityType: "user",
+        entityId: user.id,
+        details: { username: user.username, timestamp: new Date() }
+      });
+      
+      res.json({ 
+        success: true, 
+        user: { 
+          id: user.id, 
+          username: user.username, 
+          isAdmin: user.isAdmin 
+        } 
+      });
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ error: "Login failed" });
+    }
+  });
+
+  // Get current user session
+  app.get("/api/auth/me", async (req, res) => {
+    try {
+      // Default to admin user for demo
+      const userId = req.headers['x-user-id'] || 1;
+      const user = await storage.getUserById(parseInt(userId as string));
+      
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      
+      res.json({ 
+        id: user.id, 
+        username: user.username, 
+        isAdmin: user.isAdmin,
+        isActive: user.isActive 
+      });
+    } catch (error) {
+      console.error("Get user session error:", error);
+      res.status(500).json({ error: "Failed to get user session" });
+    }
+  });
+  
   // ============= MESSAGE INGESTION MODULE =============
   
   // Webhook for receiving Telegram messages
