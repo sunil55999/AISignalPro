@@ -7,11 +7,11 @@
     1995,
     2005
   ],
-  "lot": 0.2,
+  "lot": 0.19,
   "order_type": "market",
-  "delay_ms": 2412,
+  "delay_ms": 1122,
   "partial_close": 0,
   "move_sl_to_be": true,
-  "timestamp": "2025-06-18T12:57:48.155Z",
+  "timestamp": "2025-06-18T13:24:47.375Z",
   "comment": "Manual"
 }

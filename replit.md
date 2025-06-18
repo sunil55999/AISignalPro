@@ -402,6 +402,11 @@ Changelog:
 - June 18, 2025: Added one-command launchers (bash/python) for complete system
 - June 18, 2025: Implemented prop firm safe MT5 EA with JSON-based signal input
 - June 18, 2025: Created comprehensive signal testing and monitoring utilities
+- June 18, 2025: Enhanced system with advanced multi-user architecture and bug fixes
+- June 18, 2025: Added comprehensive core modules: advanced signal parser, OCR processor, Telegram listener, enhanced MT5 dispatcher
+- June 18, 2025: Implemented RBAC system with role-based access control and provider scoring
+- June 18, 2025: Created enhanced schema with multi-user support, execution modes, and advanced analytics
+- June 18, 2025: Built comprehensive launcher system with automatic dependency management
 ```
 
 ## User Preferences
