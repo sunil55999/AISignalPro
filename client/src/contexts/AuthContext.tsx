@@ -28,8 +28,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const userId = localStorage.getItem('userId');
         if (userId) {
-          const response = await apiRequest('GET', `/api/auth/me`, null, {
-            'x-user-id': userId
+          const response = await fetch(`/api/auth/me`, {
+            headers: {
+              'x-user-id': userId
+            }
           });
           const userData = await response.json();
           setUser(userData);
