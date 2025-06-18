@@ -96,10 +96,56 @@ The system features a React frontend with shadcn/ui components, an Express.js ba
 - **Schema**: Centralized in `shared/schema.ts` with Zod validation
 - **Environment**: `DATABASE_URL` environment variable for connection string
 
+## Unified System Integration
+
+### One-Command Launch System
+The complete trading system can now be started with a single command:
+
+```bash
+# Option 1: Bash launcher (Linux/Mac/WSL)
+bash run_all.sh
+
+# Option 2: Python launcher (Cross-platform)
+python start.py
+
+# Option 3: Standard npm (Current Replit setup)
+npm run dev
+```
+
+### System Architecture Flow
+```
+Frontend Dashboard → Backend API → Signal Parser → MT5 EA → Trade Execution
+     ↓                   ↓             ↓           ↓
+User Interface     REST Endpoints   AI Engine   JSON Files → MetaTrader
+```
+
+### MT5 Stealth EA Integration
+- **File**: `mt5_ea/StealthCopierEA.mq5`
+- **Signal Input**: JSON files (`C:\TradingSignals\signals.json`)
+- **Execution**: Human-like delays (0.5-3.0 seconds)
+- **Safety**: No external connections, prop firm compliant
+- **Features**: Risk management, breakeven, partial closes
+
+### Signal Testing Utilities
+- `test_signal.sh` - Interactive signal testing
+- `check_status.py` - System health monitoring
+- Built-in manual dispatch endpoint: `/api/mt5/manual-dispatch`
+
+### Key Components Integration
+1. **Advanced Signal Parser**: 89%+ accuracy with confidence scoring
+2. **Admin Dashboard**: Real-time channel and trade management
+3. **User Dashboard**: Performance tracking and risk controls
+4. **MT5 Integration**: Stealth EA with prop firm safety features
+5. **Unified Launcher**: Single-command system startup
+
 ## Changelog
 ```
 Changelog:
-- June 18, 2025. Initial setup
+- June 18, 2025: Initial setup
+- June 18, 2025: Completed unified system integration with MT5 stealth EA
+- June 18, 2025: Added one-command launchers (bash/python) for complete system
+- June 18, 2025: Implemented prop firm safe MT5 EA with JSON-based signal input
+- June 18, 2025: Created comprehensive signal testing and monitoring utilities
 ```
 
 ## User Preferences

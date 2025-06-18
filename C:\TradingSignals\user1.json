@@ -1,0 +1,17 @@
+{
+  "symbol": "XAUUSD",
+  "action": "buy",
+  "entry": 1985,
+  "sl": 1975,
+  "tp": [
+    1995,
+    2005
+  ],
+  "lot": 0.2,
+  "order_type": "market",
+  "delay_ms": 2412,
+  "partial_close": 0,
+  "move_sl_to_be": true,
+  "timestamp": "2025-06-18T12:57:48.155Z",
+  "comment": "Manual"
+}

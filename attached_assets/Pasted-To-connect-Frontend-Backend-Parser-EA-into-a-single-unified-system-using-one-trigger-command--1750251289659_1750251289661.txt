@@ -1,0 +1,103 @@
+To connect Frontend + Backend + Parser + EA into a single, unified system using one trigger command or script, you'll want to design a centralized controller (or start.py) that initializes each component in correct order and binds them together using environment variables or config files.
+
+🧠 SYSTEM OVERVIEW
+css
+Copy
+Edit
+[ Frontend (React) ]  <—>  [ Backend API (FastAPI/Flask) ]
+                                ▲
+                                │
+                        [ Parser (AI + Rule Engine) ]
+                                │
+                      [ Signal Dispatcher to MT5 EA ]
+✅ MASTER COMMAND: run_all.sh or python start.py
+🔥 One-line Shell Command (Linux / Replit / Ubuntu VPS)
+bash
+Copy
+Edit
+bash run_all.sh
+🔥 One-line Python Script for Orchestration
+bash
+Copy
+Edit
+python start.py
+🛠️ run_all.sh – Linux/Unix/Mac Example
+bash
+Copy
+Edit
+#!/bin/bash
+
+echo "🔧 Starting Backend API..."
+cd backend
+uvicorn main:app --host 0.0.0.0 --port 8000 &
+
+echo "🤖 Starting AI Parser Engine..."
+cd ../parser
+python parser.py &
+
+echo "🌐 Starting Frontend Dashboard..."
+cd ../frontend
+npm run dev &
+
+echo "📤 Starting MT5 Signal Dispatcher..."
+cd ../ea_bridge
+python dispatch.py &
+
+wait
+🛠️ start.py – Python-Based Launcher (Cross-platform)
+python
+Copy
+Edit
+import subprocess
+
+print("🚀 Launching Full Signal Copier System...")
+
+subprocess.Popen(["uvicorn", "backend.main:app", "--port", "8000"])
+subprocess.Popen(["python", "parser/parser.py"])
+subprocess.Popen(["npm", "run", "dev"], cwd="frontend")
+subprocess.Popen(["python", "ea_bridge/dispatch.py"])
+
+print("✅ All components started.")
+🔄 How Components Communicate
+Component	Role	Connection
+Frontend	User interface	Talks to backend via REST APIs
+Backend (FastAPI)	Core logic + API layer	Receives messages, controls parser
+Parser	AI model or rule engine	Called via backend /parse route
+EA Dispatcher	Sends parsed signals to EA	Reads backend output or signal.json
+
+🧠 Output File Example (signal.json for EA)
+json
+Copy
+Edit
+{
+  "symbol": "XAUUSD",
+  "action": "buy",
+  "entry": 1985,
+  "sl": 1975,
+  "tp": [1995, 2005],
+  "lot": 0.2,
+  "intent": "open_trade"
+}
+EA will read this from a synced path (e.g., C:/EA/Signals/active_signal.json).
+
+✅ TL;DR — One Command to Rule Them All:
+bash
+Copy
+Edit
+bash run_all.sh
+Or:
+
+bash
+Copy
+Edit
+python start.py
+✅ This will:
+
+Launch your backend API
+
+Start the AI parser service
+
+Serve your React frontend
+
+Start the MT5 signal dispatcher
+

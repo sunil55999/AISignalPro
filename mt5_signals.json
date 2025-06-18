@@ -1,0 +1,16 @@
+[
+  {
+    "timestamp": "2025-06-18T12:57:48.152Z",
+    "symbol": "XAUUSD",
+    "action": "buy",
+    "entry": 1985,
+    "sl": 1975,
+    "tp": [
+      1995,
+      2005
+    ],
+    "lot": 0.2,
+    "order_type": "market",
+    "comment": "AI Signal - Confidence: 100%"
+  }
+]
