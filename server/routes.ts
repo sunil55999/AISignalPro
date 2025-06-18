@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./database";
+import { fallbackStorage as storage } from "./fallback-storage";
 import { 
   insertSignalSchema, 
   insertManualRuleSchema, 
