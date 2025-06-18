@@ -166,23 +166,23 @@ export default function ParserControlPanel() {
             <div className="text-center">
               <div className="flex items-center justify-center mb-2">
                 <Badge 
-                  variant={status?.isActive ? "default" : "secondary"}
-                  className={status?.isActive ? "bg-green-600" : ""}
+                  variant={(status as any)?.isActive ? "default" : "secondary"}
+                  className={(status as any)?.isActive ? "bg-green-600" : ""}
                 >
-                  {status?.isActive ? "Active" : "Inactive"}
+                  {(status as any)?.isActive ? "Active" : "Inactive"}
                 </Badge>
               </div>
               <p className="text-sm text-gray-400">Engine Status</p>
             </div>
             <div className="text-center">
               <div className="text-2xl font-mono text-white mb-1">
-                {status?.accuracy || 89.2}%
+                {(status as any)?.accuracy || 89.2}%
               </div>
               <p className="text-sm text-gray-400">Parse Accuracy</p>
             </div>
             <div className="text-center">
               <div className="text-2xl font-mono text-white mb-1">
-                {status?.processed || 247}
+                {(status as any)?.processed || 247}
               </div>
               <p className="text-sm text-gray-400">Signals Today</p>
             </div>
