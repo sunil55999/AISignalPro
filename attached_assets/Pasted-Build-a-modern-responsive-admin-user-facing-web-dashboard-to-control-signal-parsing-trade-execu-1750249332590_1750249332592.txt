@@ -1,0 +1,50 @@
+Build a modern, responsive, admin + user-facing web dashboard to control signal parsing, trade execution, risk settings, and performance tracking — smarter and more flexible than telegram-signals-copier.com
+
+🎯 OBJECTIVES
+Provide a central control panel for users and admins
+
+Allow users to view signals, adjust risk settings, manage channels, and track performance
+
+Let admins manage rules, parser behavior, logs, and trigger retraining
+
+🔧 FEATURE LIST (COMPONENT-WISE)
+👤 USER DASHBOARD
+Feature	Description
+🔧 Configure Risk Settings	Lot mode, risk %, fixed SL, max drawdown
+📋 View Parsed Signals	Display parsed signal data + original message
+⚠️ Accept or Reject Trades	Optional manual approval mode
+📈 Trade History / Performance	Table + charts: wins/losses, avg RR, pips gained
+🔌 Enable/Disable Copier	Toggle real-time trade execution
+📦 Channel Management	Add/remove Telegram channels per user
+🛠 Personal Rules	Define personal parsing overrides or filters
+
+🧠 ADMIN PANEL
+Feature	Description
+🔍 View Raw & Parsed Messages	Per channel, per user
+🧠 Parser Retraining Control	Upload labeled data, trigger model update
+🧪 Signal Accuracy Feedback	Mark incorrect parses to improve AI
+🔄 Manual Rule Management	Upload, edit, or assign regex/rule templates
+🧾 Trade Execution Logs	MT5 trade results, errors, latency
+📊 Provider Signal Scoring	Compare provider performance with stats
+⏱ Schedule Parser / Backtest Tasks	Set intervals for retraining or backtesting
+
+🖼 UI/UX DESIGN PROMPT (To Pass to a Frontend Dev)
+Build a sleek, black-themed frontend with green/blue accent (modern fintech style).
+Use React + TailwindCSS, include:
+
+Sidebar menu (Home, Signals, Trades, Settings, Admin)
+
+Responsive mobile/tablet layout
+
+Charts (Recharts.js or ApexCharts)
+
+Notifications (toasts, modal alerts)
+
+Filters, toggles, dropdowns, sliders (risk %, SL offset, etc.)
+
+💡 Future-Ready Hooks
+useWebSocket() – real-time updates of signals
+
+fetchUserConfig() – sync risk settings from backend
+
+retrainParser(model) – from Admin UI
