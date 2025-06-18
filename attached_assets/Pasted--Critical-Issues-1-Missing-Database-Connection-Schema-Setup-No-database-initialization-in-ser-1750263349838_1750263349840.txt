@@ -1,0 +1,51 @@
+🐛 Critical Issues
+1. Missing Database Connection & Schema Setup
+No database initialization in server/storage.ts
+Missing Drizzle ORM setup and connection
+Schema definitions exist but aren't being used
+2. Incomplete Storage Implementation
+server/storage.ts uses in-memory Maps instead of database
+Methods like getSignalsByDateRange are incomplete
+Database queries aren't properly implemented
+3. Frontend API Integration Issues
+React Query setup exists but many components don't use it
+API calls in components bypass the centralized API client
+Inconsistent error handling across components
+4. Missing Core Dependencies
+Database driver not properly configured
+React Query types missing
+shadcn/ui components incomplete
+⚠️ Major Issues
+5. Python Core Modules Not Integrated
+Advanced parser in core/parser/ isn't connected to the main system
+MT5 dispatcher in core/mt5_bridge/ is isolated
+OCR processor and Telegram listener exist but aren't used
+6. File Path Issues
+Hardcoded Windows paths in MT5 EA (C:\TradingSignals\)
+Cross-platform compatibility problems
+Signal file creation logic missing
+7. User Settings Infinite Loop
+Console logs show excessive PUT/GET requests to /api/user/1/settings
+Likely caused by state management issues in React components
+Performance impact from repeated API calls
+8. Authentication & Authorization Missing
+No user authentication system
+Admin panel has no access control
+All endpoints are publicly accessible
+🔧 Minor Issues
+9. Component State Management
+Several components have unused state variables
+Props drilling instead of proper state management
+Missing loading states and error boundaries
+10. TypeScript Errors
+Inconsistent type definitions
+Missing type imports
+Any types used instead of proper typing
+11. Signal Processing Logic
+Manual rule checking in parser has async issues
+Confidence calculation inconsistencies
+Duplicate signal prevention not working properly
+12. MT5 EA Integration
+JSON parsing in MQL5 is basic and error-prone
+File reading frequency too high for production
+Error handling in EA is minimal

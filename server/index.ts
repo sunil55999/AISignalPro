@@ -2,9 +2,22 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
+import { storage } from "./database";
+
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Initialize database on startup
+async function initializeDatabase() {
+  try {
+    await storage.initialize();
+    console.log('Database initialized successfully');
+  } catch (error) {
+    console.error('Database initialization failed:', error);
+    process.exit(1);
+  }
+}
 
 app.use((req, res, next) => {
   const start = Date.now();
