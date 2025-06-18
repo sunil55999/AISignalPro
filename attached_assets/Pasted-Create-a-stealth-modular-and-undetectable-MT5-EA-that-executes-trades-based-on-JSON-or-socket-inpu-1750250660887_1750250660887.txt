@@ -1,0 +1,109 @@
+Create a stealth, modular, and undetectable MT5 EA that executes trades based on JSON or socket input. The EA must mimic manual trading behavior and be prop firm-safe.
+
+🎯 OBJECTIVES
+Read signal instructions from local file (signal.json) or local socket
+
+Execute trades in MT5 with:
+
+Adjustable delay (simulating human latency)
+
+Optional GUI or full stealth mode
+
+Log all executions
+
+Avoid detection by prop firm scanners
+
+🕵️ EA STEALTH REQUIREMENTS
+Area	Undetectable Strategy
+EA Name	Use generic names like CustomAlgoTrader
+DLLs / HTTP Calls	❌ Don’t use any — fully local execution only
+External APIs	❌ Never call anything outside MT5 terminal
+Chart Behavior	Optional: no GUI elements, no chart objects
+Journal Activity	Minimal logging, mimic manual OrderSend behavior
+Execution Timing	Randomized delay: 0.5–3.0 sec from signal receive
+Platform Footprint	Run MT5 in portable mode (isolated data folder)
+Spread/Slippage Logic	Account for realistic manual trading patterns
+
+🔧 EA FEATURES
+✅ Core
+Accept signal as JSON or socket input:
+
+json
+Copy
+Edit
+{
+  "symbol": "XAUUSD",
+  "action": "buy",
+  "entry": 1985.0,
+  "sl": 1975.0,
+  "tp": [1995, 2005],
+  "lot": 0.2
+}
+Optional: delay_ms, partial_close, move_sl_to_be
+
+✅ Logic:
+Place market/pending orders based on order_type
+
+Update SL to BE if triggered
+
+Close % of order if partial close requested
+
+Adjust SL/TP mid-trade if required
+
+Respect custom risk/lot configs (input vars or from file)
+
+✅ Inputs (Configurable)
+mq5
+Copy
+Edit
+input string SignalFile = "C:\\Signals\\user1.json";
+input double RiskPercent = 1.0;
+input bool EnableStealthMode = true;
+input int DelayMS = 1000;
+input bool AllowPartialClose = true;
+🔐 PROP FIRM SAFETY STRATEGIES
+Feature	Safe Setting
+No direct copier footprint	✅ JSON input only
+No signal patterns logged	✅ Only internal log, no EA name in messages
+Realistic order size/latency	✅ Random delay, slippage handling
+No DLLs	✅ Fully MQL5-native
+No Internet/Socket Access	✅ Read from local-only file path
+
+🧾 OPTIONAL ADD-ONS
+Log trade activity to tradelog.txt
+
+Adjustable GUI toggle (Admin or user can see current signal stats)
+
+Time filter (only trade between 9am–6pm)
+
+🧠 Final EA + Frontend Integration
+Parser → saves signal to backend API
+
+Backend writes user1.json to Windows VPS folder
+
+EA reads file → waits randomized delay → executes
+
+Admin Dashboard receives logs via socket or polling
+
+✅ Final Deliverables (From This Prompt)
+For Frontend:
+React-based dashboard
+
+Tailwind UI components
+
+WebSocket + API sync to backend
+
+Pages: Signals, Trades, Channel Manager, Parser Trainer
+
+For EA:
+StealthCopierEA.mq5
+
+JSON reader logic
+
+Trade executor
+
+Partial close + SL to BE logic
+
+Risk/lot config inputs
+
+Optional audit-safe logging

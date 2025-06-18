@@ -306,6 +306,12 @@ class AdvancedSignalParser {
 // Trade Dispatcher for MT5 integration
 class TradeDispatcher {
   private mt5OutputPath = "./mt5_signals.json";
+  private userSignalPaths = new Map<number, string>();
+  
+  constructor() {
+    // Initialize user-specific signal paths
+    this.userSignalPaths.set(1, "C:\\TradingSignals\\user1.json");
+  }
   
   async dispatchTrade(signal: any, userSettings: any): Promise<any> {
     // Apply user risk management and filters
@@ -326,11 +332,15 @@ class TradeDispatcher {
       tp: signal.tp,
       lot: trade.lot,
       orderType: signal.order_type || 'market',
-      status: 'pending'
+      status: 'pending',
+      executedAt: null,
+      result: null,
+      pnl: null
     });
     
-    // Output for MT5 EA
+    // Output for MT5 EA (both generic and user-specific)
     await this.outputToMT5(trade);
+    await this.outputToUserSpecificPath(trade, userSettings.userId);
     
     // Log audit trail
     await storage.createAuditLog({
@@ -416,6 +426,37 @@ class TradeDispatcher {
       await fs.writeFile(this.mt5OutputPath, JSON.stringify(signals, null, 2));
     } catch (error) {
       console.error('Failed to output to MT5:', error);
+    }
+  }
+
+  private async outputToUserSpecificPath(trade: any, userId: number): Promise<void> {
+    const userPath = this.userSignalPaths.get(userId);
+    if (!userPath) return;
+
+    try {
+      // Create stealth-optimized signal format for EA
+      const stealthSignal = {
+        symbol: trade.symbol,
+        action: trade.action,
+        entry: trade.entry,
+        sl: trade.sl,
+        tp: trade.tp,
+        lot: trade.lot,
+        order_type: trade.order_type || 'market',
+        delay_ms: Math.floor(Math.random() * 2000) + 500, // Random delay 0.5-2.5s
+        partial_close: 0,
+        move_sl_to_be: true,
+        timestamp: new Date().toISOString(),
+        comment: "Manual"
+      };
+
+      // Write to user-specific path for EA consumption
+      await fs.writeFile(userPath, JSON.stringify(stealthSignal, null, 2));
+      
+      // Log for audit
+      console.log(`Signal dispatched to ${userPath} for user ${userId}`);
+    } catch (error) {
+      console.error(`Failed to output to user path ${userPath}:`, error);
     }
   }
 }
@@ -810,6 +851,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Update trade result error:", error);
       res.status(500).json({ error: "Failed to update trade result" });
+    }
+  });
+  
+  // ============= MT5 INTEGRATION ENDPOINTS =============
+  
+  // Generate MT5 signal file for specific user
+  app.post("/api/mt5/generate-signal", async (req, res) => {
+    try {
+      const { userId, signal } = req.body;
+      
+      if (!userId || !signal) {
+        return res.status(400).json({ error: "User ID and signal data required" });
+      }
+      
+      // Get user settings for risk management
+      const userSettings = await storage.getUserSettings(userId);
+      if (!userSettings) {
+        return res.status(404).json({ error: "User settings not found" });
+      }
+      
+      // Dispatch trade through normal flow
+      const result = await tradeDispatcher.dispatchTrade(signal, userSettings);
+      
+      res.json(result);
+    } catch (error) {
+      console.error("MT5 signal generation error:", error);
+      res.status(500).json({ error: "Failed to generate MT5 signal" });
+    }
+  });
+  
+  // Get MT5 execution status
+  app.get("/api/mt5/status", async (req, res) => {
+    try {
+      const pendingTrades = await storage.getTradesByStatus('pending');
+      const executedTrades = await storage.getTradesByStatus('executed');
+      
+      res.json({
+        pendingTrades: pendingTrades.length,
+        executedTrades: executedTrades.length,
+        lastSignalTime: new Date().toISOString(),
+        systemStatus: 'operational'
+      });
+    } catch (error) {
+      console.error("MT5 status error:", error);
+      res.status(500).json({ error: "Failed to get MT5 status" });
+    }
+  });
+  
+  // Manual signal dispatch for testing
+  app.post("/api/mt5/manual-dispatch", async (req, res) => {
+    try {
+      const { symbol, action, entry, sl, tp, lot, userId = 1 } = req.body;
+      
+      const testSignal = {
+        signalId: null,
+        pair: symbol,
+        action,
+        entry,
+        sl,
+        tp: Array.isArray(tp) ? tp : [tp],
+        order_type: 'market',
+        confidence: 1.0,
+        source: 'manual'
+      };
+      
+      const userSettings = await storage.getUserSettings(userId);
+      if (!userSettings) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      const result = await tradeDispatcher.dispatchTrade(testSignal, userSettings);
+      
+      res.json({
+        success: true,
+        message: "Signal dispatched to MT5 EA",
+        result
+      });
+    } catch (error) {
+      console.error("Manual dispatch error:", error);
+      res.status(500).json({ error: "Failed to dispatch signal" });
     }
   });
   
