@@ -15,6 +15,22 @@ import { z } from "zod";
 import fs from "fs/promises";
 import path from "path";
 
+// ============= USER AUTHENTICATION SYSTEM =============
+
+// Simple authentication middleware
+const authenticateUser = async (req: any, res: any, next: any) => {
+  // For demo purposes, we'll use a simple user ID from headers or default to admin
+  const userId = req.headers['x-user-id'] || req.query.userId || 1;
+  const user = await storage.getUserById(parseInt(userId as string));
+  
+  if (!user) {
+    return res.status(401).json({ error: "User not found" });
+  }
+  
+  req.user = user;
+  next();
+};
+
 // Enhanced AI Signal Parser with advanced capabilities
 class AdvancedSignalParser {
   private tradingPairs = [
@@ -553,8 +569,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.post("/api/admin/channels", async (req, res) => {
     try {
-      const channelData = insertChannelSchema.parse(req.body);
-      const channel = await storage.createChannel(channelData);
+      // Add default userId if not provided (for admin operations)
+      const channelData = {
+        ...req.body,
+        userId: req.body.userId || 1, // Default to admin user
+        confidenceThreshold: req.body.confidenceThreshold / 100 || 0.85, // Convert percentage to decimal
+        isActive: req.body.isActive !== undefined ? req.body.isActive : true
+      };
+      
+      const validatedData = insertChannelSchema.parse(channelData);
+      const channel = await storage.createChannel(validatedData);
+      
+      // Create audit log for channel creation
+      await storage.createAuditLog({
+        userId: channelData.userId,
+        action: "CREATE_CHANNEL",
+        entityType: "channel",
+        entityId: channel.id,
+        details: { channelName: channel.name, description: channel.description }
+      });
+      
       res.json(channel);
     } catch (error) {
       if (error instanceof z.ZodError) {
