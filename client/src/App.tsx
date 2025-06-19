@@ -15,10 +15,14 @@ import Analytics from "@/components/Analytics";
 import Sidebar from "@/components/Sidebar";
 import LoginPage from "@/components/LoginPage";
 import MobileAuthenticatedLayout from "@/components/MobileAuthenticatedLayout";
+import DesktopLayout from "@/components/DesktopLayout";
 import ParserControlPanel from "@/components/ParserControlPanel";
+import DesktopDashboard from "@/components/DesktopDashboard";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 function AuthenticatedRouter() {
   const { isAuthenticated, isLoading } = useAuth();
+  const isMobile = useIsMobile();
 
   if (isLoading) {
     return (
@@ -35,11 +39,13 @@ function AuthenticatedRouter() {
     return <LoginPage />;
   }
 
+  const Layout = isMobile ? MobileAuthenticatedLayout : DesktopLayout;
+
   return (
-    <MobileAuthenticatedLayout>
+    <Layout>
       <Switch>
         <Route path="/" component={UserDashboard} />
-        <Route path="/dashboard" component={UserDashboard} />
+        <Route path="/dashboard" component={DesktopDashboard} />
         <Route path="/signals" component={SignalParser} />
         <Route path="/trades" component={ParseHistory} />
         <Route path="/settings" component={UserDashboard} />
@@ -52,7 +58,7 @@ function AuthenticatedRouter() {
         <Route path="/rules" component={RuleEngine} />
         <Route component={NotFound} />
       </Switch>
-    </MobileAuthenticatedLayout>
+    </Layout>
   );
 }
 
