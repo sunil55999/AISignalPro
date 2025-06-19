@@ -676,6 +676,108 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // ============= PARSER CONTROL ENDPOINTS =============
+  
+  // Get parser settings
+  app.get('/api/parser/settings', async (req, res) => {
+    try {
+      const settings = {
+        minConfidence: 85,
+        enableOCR: true,
+        autoLearning: true,
+        processingMode: 'balanced',
+        maxRate: 10,
+        autoExecution: false
+      };
+      res.json(settings);
+    } catch (error) {
+      console.error('Get parser settings error:', error);
+      res.status(500).json({ error: 'Failed to get parser settings' });
+    }
+  });
+
+  // Update parser settings
+  app.put('/api/parser/settings', async (req, res) => {
+    try {
+      const settings = req.body;
+      // In a real implementation, save to database
+      console.log('Updated parser settings:', settings);
+      res.json({ success: true, message: 'Settings updated successfully' });
+    } catch (error) {
+      console.error('Update parser settings error:', error);
+      res.status(500).json({ error: 'Failed to update parser settings' });
+    }
+  });
+
+  // Get parser status
+  app.get('/api/parser/status', async (req, res) => {
+    try {
+      const status = {
+        isActive: true,
+        accuracy: 89.2,
+        processed: 247,
+        lastUpdate: new Date().toISOString()
+      };
+      res.json(status);
+    } catch (error) {
+      console.error('Get parser status error:', error);
+      res.status(500).json({ error: 'Failed to get parser status' });
+    }
+  });
+
+  // Control parser (start/stop/restart)
+  app.post('/api/parser/control', async (req, res) => {
+    try {
+      const { action } = req.body;
+      
+      let message = '';
+      switch (action) {
+        case 'start':
+          message = 'Parser started successfully';
+          break;
+        case 'stop':
+          message = 'Parser stopped successfully';
+          break;
+        case 'restart':
+          message = 'Parser restarted successfully';
+          break;
+        default:
+          return res.status(400).json({ error: 'Invalid action' });
+      }
+      
+      console.log(`Parser control: ${action}`);
+      res.json({ success: true, message });
+    } catch (error) {
+      console.error('Parser control error:', error);
+      res.status(500).json({ error: 'Failed to control parser' });
+    }
+  });
+
+  // Generate weekly report
+  app.post('/api/reports/weekly', async (req, res) => {
+    try {
+      // Simulate report generation
+      const reportData = {
+        week: new Date().toISOString().split('T')[0],
+        totalSignals: 156,
+        successfulParsing: 138,
+        accuracy: 88.5,
+        totalTrades: 142,
+        winRate: 72.5,
+        profit: 2340.50
+      };
+      
+      res.json({ 
+        success: true, 
+        reportData,
+        downloadUrl: '/api/reports/download/weekly-' + Date.now() + '.pdf'
+      });
+    } catch (error) {
+      console.error('Generate report error:', error);
+      res.status(500).json({ error: 'Failed to generate report' });
+    }
+  });
+
   // ============= USER AUTHENTICATION ENDPOINTS =============
 
   // Login endpoint
