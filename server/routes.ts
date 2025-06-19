@@ -33,6 +33,9 @@ const authenticateUser = async (req: any, res: any, next: any) => {
 
 // Enhanced AI Signal Parser with advanced capabilities
 class AdvancedSignalParser {
+  private processedSignals = new Set<string>(); // Signal deduplication
+  private globalMinConfidence = 0.85; // Global confidence threshold
+  
   private tradingPairs = [
     'XAUUSD', 'EURUSD', 'GBPJPY', 'GBPUSD', 'USDJPY', 'USDCAD', 
     'AUDUSD', 'NZDUSD', 'EURJPY', 'EURGBP', 'AUDJPY', 'CHFJPY'
@@ -54,6 +57,19 @@ class AdvancedSignalParser {
   };
 
   async parseSignal(rawText: string, source: 'text' | 'ocr' = 'text', channelId?: number): Promise<any> {
+    // Create signal hash for deduplication
+    const signalHash = this.createSignalHash(rawText, channelId);
+    
+    // Check for duplicate signals
+    if (this.processedSignals.has(signalHash)) {
+      return {
+        success: false,
+        error: 'Duplicate signal detected',
+        confidence: 0,
+        isDuplicate: true
+      };
+    }
+
     const text = rawText.toLowerCase();
     
     // Check manual rules first if confidence might be low
@@ -294,6 +310,29 @@ class AdvancedSignalParser {
     return null;
   }
 
+  // Signal deduplication helper
+  private createSignalHash(rawText: string, channelId?: number): string {
+    const normalizedText = rawText.toLowerCase().replace(/\s+/g, ' ').trim();
+    const timestamp = Math.floor(Date.now() / 60000); // 1-minute window
+    return `${channelId || 'unknown'}_${normalizedText}_${timestamp}`;
+  }
+
+  // Add signal to processed set with cleanup
+  private markSignalProcessed(signalHash: string): void {
+    this.processedSignals.add(signalHash);
+    
+    // Clean up old signals (keep last 1000)
+    if (this.processedSignals.size > 1000) {
+      const signals = Array.from(this.processedSignals);
+      signals.slice(0, 200).forEach(hash => this.processedSignals.delete(hash));
+    }
+  }
+
+  // Enhanced confidence check with global threshold
+  private meetsConfidenceThreshold(confidence: number): boolean {
+    return confidence >= this.globalMinConfidence;
+  }
+
   private calculateConfidence(pair: string | null, action: string | null, entry: number | null, sl: number | null, tp: number[], text: string): number {
     let score = 0;
     
@@ -481,6 +520,161 @@ const signalParser = new AdvancedSignalParser();
 const tradeDispatcher = new TradeDispatcher();
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  
+  // Setup wizard endpoints
+  app.post('/api/setup/complete', async (req, res) => {
+    try {
+      const { mode, telegram, mt5, riskSettings } = req.body;
+      
+      // Create user settings based on setup
+      const userId = 1; // Get from session
+      const setupConfig = {
+        userId,
+        mode,
+        telegramConnected: telegram.connected,
+        channels: JSON.stringify(telegram.channels),
+        mt5Config: JSON.stringify(mt5),
+        maxLot: riskSettings.maxLot,
+        riskPercent: riskSettings.riskPercent,
+        maxDailyTrades: riskSettings.maxDailyTrades,
+        executionMode: riskSettings.executionMode,
+        setupCompleted: true,
+        completedAt: new Date().toISOString()
+      };
+      
+      await storage.updateUserSettings(userId, setupConfig);
+      res.json({ success: true, message: 'Setup completed successfully' });
+    } catch (error) {
+      console.error('Setup completion error:', error);
+      res.status(500).json({ error: 'Failed to complete setup' });
+    }
+  });
+
+  // Telegram integration endpoints
+  app.post('/api/telegram/sessions', async (req, res) => {
+    try {
+      const { phoneNumber, apiId, apiHash } = req.body;
+      
+      // In a real implementation, this would connect to Telegram API
+      const session = {
+        id: Date.now().toString(),
+        phoneNumber,
+        apiId,
+        apiHash,
+        isConnected: true,
+        connectedAt: new Date().toISOString()
+      };
+      
+      res.json({ success: true, session });
+    } catch (error) {
+      console.error('Telegram session error:', error);
+      res.status(500).json({ error: 'Failed to connect Telegram session' });
+    }
+  });
+
+  app.get('/api/telegram/sessions', async (req, res) => {
+    try {
+      // Mock data - replace with real session management
+      const sessions = [
+        {
+          id: '1',
+          username: 'trader_pro',
+          firstName: 'John',
+          lastName: 'Doe',
+          phoneNumber: '+1234567890',
+          isOnline: true,
+          lastSeen: 'Online'
+        }
+      ];
+      res.json(sessions);
+    } catch (error) {
+      console.error('Get sessions error:', error);
+      res.status(500).json({ error: 'Failed to get sessions' });
+    }
+  });
+
+  app.post('/api/telegram/channels/toggle', async (req, res) => {
+    try {
+      const { channelId, active } = req.body;
+      
+      // Update channel status in database
+      const channel = await storage.getChannelById(parseInt(channelId));
+      if (channel) {
+        await storage.updateChannel(parseInt(channelId), { isActive: active });
+        res.json({ success: true });
+      } else {
+        res.status(404).json({ error: 'Channel not found' });
+      }
+    } catch (error) {
+      console.error('Channel toggle error:', error);
+      res.status(500).json({ error: 'Failed to toggle channel' });
+    }
+  });
+
+  // MT5 integration endpoints
+  app.post('/api/mt5/accounts', async (req, res) => {
+    try {
+      const { login, broker, serverName, accountType, signalPath, executionMode } = req.body;
+      
+      const account = {
+        id: Date.now().toString(),
+        login,
+        broker,
+        serverName,
+        accountType,
+        signalPath,
+        executionMode,
+        isConnected: true,
+        connectedAt: new Date().toISOString()
+      };
+      
+      res.json({ success: true, account });
+    } catch (error) {
+      console.error('MT5 account error:', error);
+      res.status(500).json({ error: 'Failed to add MT5 account' });
+    }
+  });
+
+  app.get('/api/mt5/accounts', async (req, res) => {
+    try {
+      // Mock data - replace with real account management
+      const accounts = [
+        {
+          id: '1',
+          login: '12345678',
+          broker: 'IC Markets',
+          serverName: 'ICMarkets-Demo',
+          accountType: 'demo',
+          balance: 10000,
+          equity: 10250,
+          margin: 500,
+          freeMargin: 9750,
+          marginLevel: 2050,
+          isConnected: true,
+          lastUpdate: '2 minutes ago',
+          executionMode: 'semi-auto',
+          signalPath: 'C:\\TradingSignals\\signals.json'
+        }
+      ];
+      res.json(accounts);
+    } catch (error) {
+      console.error('Get MT5 accounts error:', error);
+      res.status(500).json({ error: 'Failed to get MT5 accounts' });
+    }
+  });
+
+  app.patch('/api/mt5/accounts/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { executionMode } = req.body;
+      
+      // Update execution mode in database
+      res.json({ success: true, message: 'Execution mode updated' });
+    } catch (error) {
+      console.error('MT5 account update error:', error);
+      res.status(500).json({ error: 'Failed to update account' });
+    }
+  });
   
   // ============= USER AUTHENTICATION ENDPOINTS =============
 

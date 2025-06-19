@@ -1,0 +1,172 @@
+Refactor the entire Signal Copier UI/UX, split user paths into Beginner Mode and Pro Mode, implement clean workflows for connecting Telegram accounts, managing MT5 terminals, and applying rule sets. Fix known bugs, unify UX, and prepare the system for mass adoption by both casual traders and pros.
+
+✅ 1. Beginner / Pro Mode Switch
+🔧 Description:
+Add a UI toggle (global app state) for Beginner Mode and Pro Mode.
+
+🔹 Beginner Mode Features (Simplified View):
+Guided setup wizard (step-by-step):
+
+Connect Telegram account
+
+Choose channels to follow
+
+Add MT5 account
+
+Select risk (Low/Med/High)
+
+Auto-configured rules (no coding)
+
+Fewer visible buttons
+
+Visual confirmation before each trade
+
+🔸 Pro Mode Features (Advanced View):
+Access all modules:
+
+Rule builder
+
+Parser override
+
+SL/TP/RR settings
+
+Multi-TP management
+
+Grid / Reverse options
+
+Strategy scoring
+
+Manual EA tuning
+
+Execution delay sliders
+
+Enable auto-training pipeline
+
+Store mode in user config:
+
+json
+Copy
+Edit
+{ "user_id": 123, "mode": "beginner" }
+✅ 2. Dedicated Telegram Integration Panel
+Create a modular page/component:
+/connect/telegram
+
+Features:
+Add Telegram account (via session login or bot token)
+
+View connected sessions (display user’s name, ID, online status)
+
+Add/remove channels to copy from
+
+Auto-scan for known providers
+
+Tag channels by provider, strategy, trust score
+
+✅ 3. Dedicated MT5 Connector Panel
+Page: /connect/mt5
+
+Features:
+Connect via:
+
+EA file
+
+JSON watcher path
+
+Optional API mode
+
+Per-user config:
+
+MT5 login
+
+Broker
+
+VPS/Local
+
+Allow test mode with “shadow” execution
+
+✅ 4. Improved Layout & Navigation
+Upgrade	Description
+🧭 Sidebar	Icons for Home, Signals, Trades, Telegram, MT5, Admin
+🗺️ Guided Mode	Breadcrumbs or “wizard” flow in Beginner setup
+🧱 Tabbed Views	Use tabs for: Overview / Parsing / Advanced per signal
+🖼 Visual Confirmation	Add preview card showing parsed result + original message/image
+
+✅ 5. Bug Fixes to Address
+Issue	Fix
+⚠️ Parser low-confidence but trade still sent	Add global block if confidence < 0.85
+⚠️ Signal duplicates on reconnect	Add hash of channel + message_id to check
+⚠️ UI shows outdated signals	Use WebSocket or polling refresh on each tab
+⚠️ Image OCR sometimes fails silently	Add fallback + red icon if OCR failed
+⚠️ EA not picking up new signals	Add file-locking, checksum, retry loop
+
+✅ 6. Quality-of-Life Upgrades
+🔹 UX
+Tooltips for each action
+
+Dark/light theme toggle
+
+Responsive mobile version
+
+🔹 Parser Trainer
+Add tab under Admin → “Train Parser”
+
+Upload labeled JSON
+
+View training history
+
+Manual correction + resubmit
+
+🔹 Notifications
+Toasts for new signal
+
+“Trade executed” popup
+
+Telegram alerts from backend
+
+🔹 Audit Logs
+Log:
+
+Signal received
+
+Parser result
+
+Final execution
+
+Errors/failures
+
+✅ 7. Upgrade Execution Logic
+Upgrade	Reason
+✅ Allow SL/TP offset sliders	For prop firm stealth
+✅ Execution delay randomizer	To avoid patterns
+✅ Partial close support	Split exits by % or price
+✅ Execution mode: shadow / semi-auto / auto	Beginner mode = semi-auto default
+
+✅ Final Project Flow Diagram (Updated UX)
+css
+Copy
+Edit
+[ Beginner User ]
+   ↓
+[ Guided Wizard (UI) ]
+   ↓
+[ Telegram Connect ]  ←→  [ Channel Picker ]
+   ↓
+[ MT5 Connect ]       ←→  [ Risk Profile ]
+   ↓
+[ Start Copier Button ] ←→ [ Dashboard View ]
+
+[ Pro User ]
+   ↓
+[ Full Access Dashboard ]
+   ↓
+[ Admin Rule Builder, Parser Trainer ]
+   ↓
+[ Advanced Stats + Backtester ]
+✅ Summary of Implementation Plan
+Area	Task
+🧩 UI/UX	Beginner/Pro switch, sidebar UI
+🔗 Integration	Modular connect panels (Telegram + MT5)
+⚙️ Core logic	Signal router + deduplication + execution guard
+🧠 Parser	Error fallback, correction, training loop
+📲 Feedback	Notifications, previews, logs

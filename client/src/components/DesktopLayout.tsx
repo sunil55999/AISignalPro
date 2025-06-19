@@ -1,44 +1,42 @@
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useUserMode } from '@/contexts/UserModeContext';
+import ModeToggle, { ModeAware } from '@/components/ModeToggle';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { 
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
+  Tooltip, 
+  TooltipContent, 
+  TooltipProvider, 
+  TooltipTrigger 
 } from '@/components/ui/tooltip';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { Link, useLocation } from 'wouter';
 import {
   Home,
-  Settings,
-  BarChart3,
   MessageSquare,
+  TrendingUp,
+  BarChart3,
+  History,
+  Settings,
+  Shield,
+  Brain,
+  Database,
+  Cog,
   Users,
+  Target,
   FileText,
+  Plus,
+  Search,
+  Bell,
+  User,
   LogOut,
   Zap,
-  Target,
-  Bell,
-  Search,
-  Plus,
-  ChevronDown,
-  Activity,
-  Shield,
-  Database,
-  Globe
+  Bot,
+  Globe,
+  GraduationCap,
+  Lightbulb
 } from 'lucide-react';
-import { Link, useLocation } from 'wouter';
-import { Input } from '@/components/ui/input';
 
 interface DesktopLayoutProps {
   children: React.ReactNode;
@@ -46,33 +44,61 @@ interface DesktopLayoutProps {
 
 export default function DesktopLayout({ children }: DesktopLayoutProps) {
   const { user, logout } = useAuth();
+  const { isBeginnerMode, isProMode } = useUserMode();
   const [location] = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
 
-  const navigation = [
+  const beginnerNavigation = [
     { 
       name: 'Dashboard', 
       href: '/dashboard', 
       icon: Home,
-      description: 'Overview and metrics'
+      description: 'Overview and quick stats'
+    },
+    { 
+      name: 'Setup Wizard', 
+      href: '/setup', 
+      icon: GraduationCap,
+      description: 'Guided setup process'
+    },
+    { 
+      name: 'Telegram', 
+      href: '/connect/telegram', 
+      icon: MessageSquare,
+      description: 'Connect signal channels'
+    },
+    { 
+      name: 'MT5 Trading', 
+      href: '/connect/mt5', 
+      icon: TrendingUp,
+      description: 'Connect trading terminal'
+    },
+    { 
+      name: 'Performance', 
+      href: '/analytics', 
+      icon: BarChart3,
+      description: 'Trading performance'
+    },
+    { 
+      name: 'Settings', 
+      href: '/settings', 
+      icon: Settings,
+      description: 'Account preferences'
+    }
+  ];
+
+  const proNavigation = [
+    { 
+      name: 'Dashboard', 
+      href: '/dashboard', 
+      icon: Home,
+      description: 'System overview'
     },
     { 
       name: 'Signal Parser', 
       href: '/signals', 
-      icon: MessageSquare,
-      description: 'Parse trading signals'
-    },
-    { 
-      name: 'Parser Control', 
-      href: '/parser', 
-      icon: Zap,
-      description: 'Configure parser settings'
-    },
-    { 
-      name: 'Analytics', 
-      href: '/analytics', 
-      icon: BarChart3,
-      description: 'Performance analytics'
+      icon: Brain,
+      description: 'Parse and test signals'
     },
     { 
       name: 'Trade History', 
@@ -81,31 +107,73 @@ export default function DesktopLayout({ children }: DesktopLayoutProps) {
       description: 'Trading records'
     },
     { 
+      name: 'Telegram', 
+      href: '/connect/telegram', 
+      icon: Bot,
+      description: 'Channel management'
+    },
+    { 
+      name: 'MT5 Integration', 
+      href: '/connect/mt5', 
+      icon: Globe,
+      description: 'Terminal management'
+    },
+    { 
+      name: 'Analytics', 
+      href: '/analytics', 
+      icon: BarChart3,
+      description: 'Advanced analytics'
+    },
+    { 
+      name: 'History', 
+      href: '/history', 
+      icon: History,
+      description: 'Complete history'
+    },
+    { 
       name: 'Training Data', 
       href: '/training', 
-      icon: FileText,
+      icon: Database,
       description: 'ML training datasets'
     },
     ...(user?.isAdmin ? [
       { 
         name: 'Admin Panel', 
         href: '/admin', 
-        icon: Users,
+        icon: Shield,
         description: 'System administration'
       },
+      { 
+        name: 'Parser Control', 
+        href: '/parser', 
+        icon: Cog,
+        description: 'Parser configuration'
+      },
+      { 
+        name: 'Rule Engine', 
+        href: '/rules', 
+        icon: FileText,
+        description: 'Custom parsing rules'
+      }
     ] : []),
     { 
       name: 'Settings', 
       href: '/settings', 
       icon: Settings,
       description: 'User preferences'
-    },
+    }
   ];
 
-  const quickActions = [
+  const navigation = isBeginnerMode ? beginnerNavigation : proNavigation;
+
+  const quickActions = isBeginnerMode ? [
+    { name: 'Start Setup', icon: GraduationCap, action: () => window.location.href = '/setup' },
+    { name: 'Connect Telegram', icon: MessageSquare, action: () => window.location.href = '/connect/telegram' },
+    { name: 'Add MT5', icon: TrendingUp, action: () => window.location.href = '/connect/mt5' }
+  ] : [
     { name: 'Parse Signal', icon: Plus, action: () => window.location.href = '/signals' },
-    { name: 'Add Channel', icon: MessageSquare, action: () => window.location.href = '/admin' },
-    { name: 'Generate Report', icon: FileText, action: () => console.log('Generate report') },
+    { name: 'Add Channel', icon: MessageSquare, action: () => window.location.href = '/connect/telegram' },
+    { name: 'View Analytics', icon: BarChart3, action: () => window.location.href = '/analytics' }
   ];
 
   const handleLogout = () => {
@@ -128,13 +196,15 @@ export default function DesktopLayout({ children }: DesktopLayoutProps) {
                 </div>
                 <div>
                   <h1 className="text-xl font-bold text-white">AI Trading Parser</h1>
-                  <p className="text-xs text-gray-400">Professional Edition</p>
+                  <p className="text-xs text-gray-400">
+                    {isBeginnerMode ? 'Beginner Mode' : 'Professional Edition'}
+                  </p>
                 </div>
               </div>
 
               {/* Navigation Pills */}
               <nav className="hidden lg:flex items-center space-x-1">
-                {navigation.slice(0, 6).map((item) => {
+                {navigation.slice(0, isBeginnerMode ? 4 : 6).map((item) => {
                   const isActive = location === item.href;
                   return (
                     <TooltipProvider key={item.name}>
@@ -146,16 +216,19 @@ export default function DesktopLayout({ children }: DesktopLayoutProps) {
                               size="sm"
                               className={`${
                                 isActive 
-                                  ? "bg-blue-600 text-white shadow-lg" 
-                                  : "text-gray-300 hover:text-white hover:bg-gray-700"
-                              } transition-all duration-200`}
+                                  ? 'bg-blue-600 text-white shadow-lg' 
+                                  : 'text-gray-300 hover:text-white hover:bg-gray-700'
+                              } transition-all duration-200 relative`}
                             >
                               <item.icon className="h-4 w-4 mr-2" />
                               {item.name}
+                              {isActive && (
+                                <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-blue-400 rounded-full" />
+                              )}
                             </Button>
                           </Link>
                         </TooltipTrigger>
-                        <TooltipContent>
+                        <TooltipContent className="bg-gray-700 border-gray-600">
                           <p>{item.description}</p>
                         </TooltipContent>
                       </Tooltip>
@@ -165,202 +238,144 @@ export default function DesktopLayout({ children }: DesktopLayoutProps) {
               </nav>
             </div>
 
-            {/* Search and Actions */}
+            {/* Right Side Controls */}
             <div className="flex items-center space-x-4">
-              {/* Global Search */}
-              <div className="relative hidden md:block">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search signals, channels..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 w-64 bg-gray-700 border-gray-600 text-white placeholder-gray-400 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
+              {/* Mode Toggle */}
+              <ModeToggle />
 
-              {/* Quick Actions */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="border-gray-600 text-gray-300 hover:bg-gray-700">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Quick Actions
-                    <ChevronDown className="h-4 w-4 ml-2" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-48 bg-gray-800 border-gray-700">
-                  <DropdownMenuLabel className="text-gray-300">Actions</DropdownMenuLabel>
-                  <DropdownMenuSeparator className="bg-gray-700" />
-                  {quickActions.map((action) => (
-                    <DropdownMenuItem 
-                      key={action.name}
-                      onClick={action.action}
-                      className="text-gray-300 hover:bg-gray-700 hover:text-white cursor-pointer"
-                    >
-                      <action.icon className="h-4 w-4 mr-2" />
-                      {action.name}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {/* Search */}
+              <ModeAware proOnly>
+                <div className="relative hidden md:block">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    placeholder="Search signals, trades..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10 w-64 bg-gray-700 border-gray-600 text-white placeholder:text-gray-400 focus:border-blue-500"
+                  />
+                </div>
+              </ModeAware>
+
+              {/* Quick Actions Dropdown */}
+              <div className="flex items-center space-x-2">
+                {quickActions.slice(0, 2).map((action, index) => (
+                  <TooltipProvider key={index}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={action.action}
+                          className="text-gray-300 hover:text-white hover:bg-gray-700"
+                        >
+                          <action.icon className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent className="bg-gray-700 border-gray-600">
+                        <p>{action.name}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ))}
+              </div>
 
               {/* Notifications */}
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="sm" className="relative text-gray-300 hover:text-white">
-                      <Bell className="h-5 w-5" />
-                      <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full"></span>
+                    <Button variant="ghost" size="sm" className="text-gray-300 hover:text-white hover:bg-gray-700 relative">
+                      <Bell className="h-4 w-4" />
+                      <Badge className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center bg-red-500 text-xs">
+                        3
+                      </Badge>
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>
+                  <TooltipContent className="bg-gray-700 border-gray-600">
                     <p>3 new notifications</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
 
               {/* User Menu */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="flex items-center space-x-3 p-2">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback className="bg-blue-600 text-white">
-                        {user?.username?.charAt(0).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="hidden md:block text-left">
-                      <p className="text-sm font-medium text-white">{user?.username}</p>
-                      <p className="text-xs text-gray-400">
-                        {user?.isAdmin ? "Administrator" : "User"}
-                      </p>
-                    </div>
-                    <ChevronDown className="h-4 w-4 text-gray-400" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56 bg-gray-800 border-gray-700" align="end">
-                  <DropdownMenuLabel className="text-gray-300">
-                    <div className="flex items-center space-x-2">
-                      <Shield className="h-4 w-4" />
-                      <span>Account</span>
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator className="bg-gray-700" />
-                  <DropdownMenuItem className="text-gray-300 hover:bg-gray-700 hover:text-white">
-                    <Settings className="h-4 w-4 mr-2" />
-                    Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="text-gray-300 hover:bg-gray-700 hover:text-white">
-                    <Activity className="h-4 w-4 mr-2" />
-                    Activity Log
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator className="bg-gray-700" />
-                  <DropdownMenuItem 
-                    onClick={handleLogout}
-                    className="text-red-400 hover:bg-red-900/20 hover:text-red-300"
-                  >
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Sign out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <div className="flex items-center space-x-3 border-l border-gray-600 pl-4">
+                <div className="text-right hidden sm:block">
+                  <p className="text-sm font-medium text-white">{user?.username}</p>
+                  <p className="text-xs text-gray-400">
+                    {user?.isAdmin ? 'Administrator' : 'Trader'}
+                  </p>
+                </div>
+                
+                <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-blue-500 rounded-full flex items-center justify-center">
+                  <User className="h-4 w-4 text-white" />
+                </div>
+                
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleLogout}
+                        className="text-gray-400 hover:text-red-400 hover:bg-gray-700"
+                      >
+                        <LogOut className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-gray-700 border-gray-600">
+                      <p>Logout</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <div className="flex flex-1">
-        {/* Secondary Sidebar */}
-        <aside className="hidden xl:block w-64 bg-gray-800/50 backdrop-blur-sm border-r border-gray-700">
-          <div className="p-6">
-            {/* Current Page Info */}
-            {currentPage && (
-              <Card className="bg-gray-700/50 border-gray-600 mb-6">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-white text-lg flex items-center">
-                    <currentPage.icon className="h-5 w-5 mr-2" />
-                    {currentPage.name}
-                  </CardTitle>
-                  <p className="text-gray-400 text-sm">{currentPage.description}</p>
-                </CardHeader>
-              </Card>
-            )}
-
-            {/* System Status */}
-            <Card className="bg-gray-700/50 border-gray-600 mb-6">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-white text-sm flex items-center">
-                  <Database className="h-4 w-4 mr-2" />
-                  System Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-400 text-sm">Parser Engine</span>
-                  <Badge className="bg-green-600 text-white">Active</Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-400 text-sm">Database</span>
-                  <Badge className="bg-green-600 text-white">Connected</Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-400 text-sm">MT5 Bridge</span>
-                  <Badge className="bg-blue-600 text-white">Ready</Badge>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Quick Stats */}
-            <Card className="bg-gray-700/50 border-gray-600">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-white text-sm flex items-center">
-                  <BarChart3 className="h-4 w-4 mr-2" />
-                  Today's Activity
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-400 text-sm">Signals Parsed</span>
-                  <span className="text-white font-mono">247</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-400 text-sm">Trades Executed</span>
-                  <span className="text-white font-mono">18</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-400 text-sm">Success Rate</span>
-                  <span className="text-green-400 font-mono">89.2%</span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </aside>
-
-        {/* Main Content */}
-        <main className="flex-1 overflow-auto">
-          <div className="p-6">
-            {children}
-          </div>
-        </main>
-      </div>
-
-      {/* Footer */}
-      <footer className="bg-gray-800/50 backdrop-blur-sm border-t border-gray-700 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4 text-gray-400 text-sm">
-            <div className="flex items-center space-x-2">
-              <Globe className="h-4 w-4" />
-              <span>Connected to 3 channels</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Activity className="h-4 w-4" />
-              <span>Last signal: 2 min ago</span>
+      {/* Breadcrumb for Beginner Mode */}
+      <ModeAware beginnerOnly>
+        {currentPage && (
+          <div className="bg-gray-800/50 border-b border-gray-700 px-6 py-2">
+            <div className="flex items-center space-x-2 text-sm">
+              <Home className="h-4 w-4 text-gray-400" />
+              <span className="text-gray-400">/</span>
+              <span className="text-blue-400">{currentPage.name}</span>
+              <span className="text-gray-500 ml-4">•</span>
+              <span className="text-gray-400">{currentPage.description}</span>
             </div>
           </div>
-          <div className="text-gray-400 text-sm">
-            AI Trading Signal Parser v2.0 • Professional Edition
-          </div>
+        )}
+      </ModeAware>
+
+      {/* Page Content */}
+      <main className="flex-1">
+        <div className="px-6 py-6">
+          {children}
         </div>
-      </footer>
+      </main>
+
+      {/* Beginner Mode Helper */}
+      <ModeAware beginnerOnly>
+        <div className="fixed bottom-6 right-6 z-50">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={() => window.location.href = '/setup'}
+                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg"
+                  size="lg"
+                >
+                  <Lightbulb className="h-5 w-5 mr-2" />
+                  Need Help?
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="bg-gray-700 border-gray-600">
+                <p>Run the setup wizard again</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+      </ModeAware>
     </div>
   );
 }
