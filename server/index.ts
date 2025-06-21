@@ -6,6 +6,7 @@ import { registerRoutes } from "./routes.js";
 import { storage } from "./database.js";
 import path from "path";
 import { fileURLToPath } from "url";
+import { WebSocketServer } from "ws";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -95,10 +96,44 @@ function log(message: string) {
     });
   }
 
+  // Setup WebSocket server for parser updates
+  const wss = new WebSocketServer({ 
+    server, 
+    path: '/ws/parser'
+  });
+
+  wss.on('connection', (ws, req) => {
+    const url = new URL(req.url!, `http://${req.headers.host}`);
+    const terminalId = url.searchParams.get('terminalId');
+    
+    log(`Terminal ${terminalId} connected for parser updates`);
+    
+    ws.on('message', (data) => {
+      try {
+        const message = JSON.parse(data.toString());
+        log(`Received from ${terminalId}:`, message.type);
+      } catch (error) {
+        log(`WebSocket message error: ${error}`);
+      }
+    });
+
+    ws.on('close', () => {
+      log(`Terminal ${terminalId} disconnected from parser updates`);
+    });
+
+    // Send connection confirmation
+    ws.send(JSON.stringify({
+      type: 'connection_established',
+      terminalId,
+      timestamp: new Date().toISOString()
+    }));
+  });
+
   const PORT = process.env.PORT || 5000;
   server.listen(PORT, "0.0.0.0", () => {
     log(`serving on port ${PORT}`);
     log(`Health check: http://localhost:${PORT}/health`);
+    log(`WebSocket server: ws://localhost:${PORT}/ws/parser`);
   });
 })();
 

@@ -739,5 +739,112 @@ export async function registerRoutes(app: Express): Promise<Express> {
     }
   });
 
+  // Parser management endpoints
+  app.post("/api/parser/push", async (req, res) => {
+    try {
+      // Mock parser file upload and broadcast
+      const { version = "2.1.5", description = "Parser update" } = req.body;
+      
+      const deployment = {
+        id: `deploy_${Date.now()}`,
+        filename: `parser_v${version}.py`,
+        originalName: `signal_parser_v${version}.py`,
+        fileHash: `sha256_${Math.random().toString(36).substring(2)}`,
+        fileSize: 45678,
+        version,
+        deployTimestamp: new Date().toISOString(),
+        uploadedBy: req.session?.user?.username || 'admin',
+        status: 'broadcasting',
+        broadcastCount: 3
+      };
+
+      // Log deployment to database (mock)
+      console.log('Parser deployment logged:', deployment);
+
+      res.json({
+        success: true,
+        deployment,
+        message: `Parser file uploaded and broadcasted to ${deployment.broadcastCount} terminals`
+      });
+    } catch (error) {
+      console.error('Parser upload error:', error);
+      res.status(500).json({ error: "Failed to upload parser file" });
+    }
+  });
+
+  app.get("/api/parser/deployments", async (req, res) => {
+    try {
+      const deployments = [
+        {
+          id: 'deploy_001',
+          filename: 'parser_v2.1.5.py',
+          originalName: 'signal_parser_v2.1.5.py',
+          fileHash: 'sha256_abc123def456',
+          fileSize: 45678,
+          version: '2.1.5',
+          deployTimestamp: new Date(Date.now() - 3600000).toISOString(),
+          uploadedBy: 'admin',
+          status: 'deployed',
+          notifiedTerminals: ['terminal-001', 'terminal-002'],
+          totalTerminals: 3
+        },
+        {
+          id: 'deploy_002',
+          filename: 'parser_v2.1.4.py',
+          originalName: 'signal_parser_v2.1.4.py',
+          fileHash: 'sha256_def456ghi789',
+          fileSize: 43210,
+          version: '2.1.4',
+          deployTimestamp: new Date(Date.now() - 86400000).toISOString(),
+          uploadedBy: 'admin',
+          status: 'deployed',
+          notifiedTerminals: ['terminal-001', 'terminal-002', 'terminal-003'],
+          totalTerminals: 3
+        }
+      ];
+
+      res.json({
+        success: true,
+        deployments,
+        totalDeployments: deployments.length
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch deployment history" });
+    }
+  });
+
+  app.get("/api/parser/terminals", async (req, res) => {
+    try {
+      const terminals = [
+        {
+          id: 'terminal-001',
+          version: '2.1.5',
+          lastSeen: new Date(Date.now() - 30000).toISOString(),
+          connected: true
+        },
+        {
+          id: 'terminal-002',
+          version: '2.1.4',
+          lastSeen: new Date(Date.now() - 120000).toISOString(),
+          connected: true
+        },
+        {
+          id: 'terminal-003',
+          version: '2.1.3',
+          lastSeen: new Date(Date.now() - 600000).toISOString(),
+          connected: false
+        }
+      ];
+
+      res.json({
+        success: true,
+        terminals,
+        totalConnected: terminals.filter(t => t.connected).length
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch terminal list" });
+    }
+  });
+
   return app;
 }
