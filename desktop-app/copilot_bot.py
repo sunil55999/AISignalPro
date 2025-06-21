@@ -18,6 +18,8 @@ from telegram.ext import (
 import sqlite3
 from dataclasses import dataclass
 import requests
+import threading
+import time
 
 # Configure logging
 logging.basicConfig(
@@ -53,6 +55,26 @@ class ChannelInfo:
     last_signal_time: Optional[datetime]
     is_active: bool
 
+@dataclass
+class AlertInfo:
+    """Alert information structure"""
+    alert_type: str
+    message: str
+    timestamp: datetime
+    severity: str  # "low", "medium", "high", "critical"
+    source: str
+    details: Optional[Dict] = None
+
+@dataclass
+class SignalSummary:
+    """Signal summary for alerts"""
+    channel_name: str
+    raw_text: str
+    parsed_data: Optional[Dict]
+    error_message: Optional[str]
+    timestamp: datetime
+    confidence: Optional[float] = None
+
 class TradingCopilotBot:
     """Main Telegram bot class for trading system control"""
     
@@ -72,9 +94,18 @@ class TradingCopilotBot:
         
         # MT5 connection state
         self.mt5_connected = False
+        self.last_mt5_status = True  # For disconnect alerts
+        
+        # Alert system
+        self.alert_queue = []
+        self.pending_retries = {}  # Store failed trades pending retry
         
         # Initialize Telegram bot
         self.application = None
+        
+        # Start monitoring thread
+        self.monitoring_active = False
+        self.monitoring_thread = None
         
     def _load_config(self, config_path: str) -> Dict:
         """Load configuration from JSON file"""
@@ -125,6 +156,30 @@ class TradingCopilotBot:
                 command TEXT,
                 parameters TEXT,
                 executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS pending_retries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                trade_data TEXT,
+                signal_summary TEXT,
+                retry_count INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                user_id INTEGER
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS alert_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                alert_type TEXT,
+                message TEXT,
+                severity TEXT,
+                source TEXT,
+                details TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                acknowledged BOOLEAN DEFAULT FALSE
             )
         """)
         
@@ -321,6 +376,287 @@ class TradingCopilotBot:
             channels.append(channel_info)
         
         return channels
+    
+    # Alert System Methods
+    
+    async def _send_alert(self, alert: AlertInfo, signal_summary: Optional[SignalSummary] = None):
+        """Send alert message to all authorized users"""
+        if not self.application:
+            return
+        
+        # Get severity emoji
+        severity_icons = {
+            "low": "⚠️",
+            "medium": "🟡",
+            "high": "🔴",
+            "critical": "🚨"
+        }
+        
+        icon = severity_icons.get(alert.severity, "⚠️")
+        
+        # Build alert message
+        alert_msg = f"""
+{icon} **SYSTEM ALERT**
+
+**Type:** {alert.alert_type}
+**Severity:** {alert.severity.upper()}
+**Source:** {alert.source}
+**Time:** {alert.timestamp.strftime('%Y-%m-%d %H:%M:%S')}
+
+**Message:** {alert.message}
+        """
+        
+        # Add signal summary if provided
+        if signal_summary:
+            alert_msg += f"""
+
+📊 **Signal Summary:**
+**Channel:** {signal_summary.channel_name}
+**Time:** {signal_summary.timestamp.strftime('%H:%M:%S')}
+**Raw Text:** {signal_summary.raw_text[:150]}...
+
+"""
+            if signal_summary.parsed_data:
+                alert_msg += f"**Parsed Data:** {json.dumps(signal_summary.parsed_data, indent=2)[:200]}...\n"
+            
+            if signal_summary.confidence:
+                alert_msg += f"**Confidence:** {signal_summary.confidence*100:.1f}%\n"
+                
+            if signal_summary.error_message:
+                alert_msg += f"**Error:** {signal_summary.error_message}\n"
+        
+        # Add details if provided
+        if alert.details:
+            alert_msg += f"\n**Details:** {json.dumps(alert.details, indent=2)[:300]}..."
+        
+        # Save alert to database
+        self._save_alert(alert)
+        
+        # Send to all authorized users
+        for user_id in self.authorized_users + self.admin_users:
+            try:
+                await self.application.bot.send_message(
+                    chat_id=user_id,
+                    text=alert_msg,
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                logger.error(f"Failed to send alert to user {user_id}: {e}")
+    
+    async def _send_retry_prompt(self, trade_data: Dict, signal_summary: SignalSummary, error_msg: str):
+        """Send retry prompt with YES/NO buttons"""
+        if not self.application:
+            return
+        
+        # Generate unique retry ID
+        retry_id = f"retry_{int(time.time())}"
+        
+        # Store pending retry
+        self.pending_retries[retry_id] = {
+            "trade_data": trade_data,
+            "signal_summary": signal_summary,
+            "error_message": error_msg,
+            "timestamp": datetime.now()
+        }
+        
+        # Save to database
+        self._save_pending_retry(retry_id, trade_data, signal_summary)
+        
+        # Build retry message
+        retry_msg = f"""
+🔄 **TRADE RETRY REQUIRED**
+
+**Signal:** {signal_summary.channel_name}
+**Pair:** {trade_data.get('pair', 'Unknown')}
+**Action:** {trade_data.get('action', 'Unknown')}
+**Lot Size:** {trade_data.get('lot_size', 'Unknown')}
+**Entry:** {trade_data.get('entry', 'Market')}
+**SL:** {trade_data.get('sl', 'None')}
+**TP:** {trade_data.get('tp', 'None')}
+
+**Error:** {error_msg}
+**Time:** {signal_summary.timestamp.strftime('%H:%M:%S')}
+
+**Raw Signal:** {signal_summary.raw_text[:200]}...
+
+Would you like to retry this trade?
+        """
+        
+        # Create inline keyboard
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ YES - Retry", callback_data=f"retry_yes_{retry_id}"),
+                InlineKeyboardButton("❌ NO - Skip", callback_data=f"retry_no_{retry_id}")
+            ],
+            [
+                InlineKeyboardButton("⚙️ Edit & Retry", callback_data=f"retry_edit_{retry_id}"),
+                InlineKeyboardButton("📊 View Details", callback_data=f"retry_details_{retry_id}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Send to admin users only
+        for user_id in self.admin_users:
+            try:
+                await self.application.bot.send_message(
+                    chat_id=user_id,
+                    text=retry_msg,
+                    parse_mode='Markdown',
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                logger.error(f"Failed to send retry prompt to user {user_id}: {e}")
+    
+    def _save_alert(self, alert: AlertInfo):
+        """Save alert to database"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO alert_history (alert_type, message, severity, source, details)
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            alert.alert_type,
+            alert.message,
+            alert.severity,
+            alert.source,
+            json.dumps(alert.details) if alert.details else None
+        ))
+        conn.commit()
+        conn.close()
+    
+    def _save_pending_retry(self, retry_id: str, trade_data: Dict, signal_summary: SignalSummary):
+        """Save pending retry to database"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO pending_retries (id, trade_data, signal_summary, user_id)
+            VALUES (?, ?, ?, ?)
+        """, (
+            retry_id,
+            json.dumps(trade_data),
+            json.dumps(signal_summary.__dict__, default=str),
+            self.admin_users[0] if self.admin_users else None
+        ))
+        conn.commit()
+        conn.close()
+    
+    def _start_monitoring(self):
+        """Start system monitoring thread"""
+        if self.monitoring_active:
+            return
+        
+        self.monitoring_active = True
+        self.monitoring_thread = threading.Thread(target=self._monitoring_loop, daemon=True)
+        self.monitoring_thread.start()
+        logger.info("System monitoring started")
+    
+    def _monitoring_loop(self):
+        """Main monitoring loop"""
+        while self.monitoring_active:
+            try:
+                # Check MT5 connection status
+                current_mt5_status = self._check_mt5_connection()
+                
+                # Check for MT5 disconnect
+                if self.last_mt5_status and not current_mt5_status:
+                    alert = AlertInfo(
+                        alert_type="MT5_DISCONNECTION",
+                        message="MT5 connection lost. Trading operations suspended.",
+                        timestamp=datetime.now(),
+                        severity="critical",
+                        source="MT5_Monitor",
+                        details={"previous_status": True, "current_status": False}
+                    )
+                    
+                    # Send alert asynchronously
+                    if self.application:
+                        asyncio.create_task(self._send_alert(alert))
+                
+                self.last_mt5_status = current_mt5_status
+                
+                # Check API server health
+                api_status = self._get_api_data("/api/mt5/status")
+                if not api_status:
+                    alert = AlertInfo(
+                        alert_type="API_SERVER_DOWN",
+                        message="API server is not responding. System functionality limited.",
+                        timestamp=datetime.now(),
+                        severity="high",
+                        source="API_Monitor"
+                    )
+                    
+                    if self.application:
+                        asyncio.create_task(self._send_alert(alert))
+                
+                # Sleep before next check
+                time.sleep(30)  # Check every 30 seconds
+                
+            except Exception as e:
+                logger.error(f"Monitoring loop error: {e}")
+                time.sleep(60)  # Wait longer on error
+    
+    # Public API methods for external integration
+    
+    async def alert_parse_error(self, signal_text: str, channel_name: str, error_msg: str):
+        """Alert about signal parsing errors"""
+        signal_summary = SignalSummary(
+            channel_name=channel_name,
+            raw_text=signal_text,
+            parsed_data=None,
+            error_message=error_msg,
+            timestamp=datetime.now()
+        )
+        
+        alert = AlertInfo(
+            alert_type="SIGNAL_PARSE_ERROR",
+            message=f"Failed to parse signal from {channel_name}",
+            timestamp=datetime.now(),
+            severity="medium",
+            source="Signal_Parser"
+        )
+        
+        await self._send_alert(alert, signal_summary)
+    
+    async def alert_strategy_error(self, trade_data: Dict, channel_name: str, validation_errors: List[str]):
+        """Alert about strategy validation errors"""
+        signal_summary = SignalSummary(
+            channel_name=channel_name,
+            raw_text=trade_data.get("raw_text", ""),
+            parsed_data=trade_data,
+            error_message="; ".join(validation_errors),
+            timestamp=datetime.now()
+        )
+        
+        alert = AlertInfo(
+            alert_type="STRATEGY_VALIDATION_ERROR",
+            message=f"Strategy validation failed: {', '.join(validation_errors)}",
+            timestamp=datetime.now(),
+            severity="medium",
+            source="Strategy_Validator",
+            details={"validation_errors": validation_errors, "trade_data": trade_data}
+        )
+        
+        # Check if this should trigger a retry prompt
+        critical_errors = ["missing_sl", "invalid_lot_size", "invalid_pair"]
+        has_critical_error = any(error in validation_errors[0] for error in critical_errors)
+        
+        if has_critical_error:
+            await self._send_retry_prompt(trade_data, signal_summary, "; ".join(validation_errors))
+        else:
+            await self._send_alert(alert, signal_summary)
+    
+    async def alert_trade_failure(self, trade_data: Dict, signal_summary: SignalSummary, error_msg: str):
+        """Alert about trade execution failures"""
+        alert = AlertInfo(
+            alert_type="TRADE_EXECUTION_FAILURE",
+            message=f"Trade execution failed: {error_msg}",
+            timestamp=datetime.now(),
+            severity="high",
+            source="Trade_Executor",
+            details={"trade_data": trade_data}
+        )
+        
+        await self._send_retry_prompt(trade_data, signal_summary, error_msg)
     
     # Command Handlers
     
@@ -683,6 +1019,11 @@ Stealth Mode: {'🔒 ON' if self.stealth_mode else '🔓 OFF'}
         
         await query.answer()
         
+        # Handle retry callbacks
+        if query.data.startswith("retry_"):
+            await self._handle_retry_callback(query, user_id)
+            return
+        
         if query.data == "refresh_status":
             # Refresh status
             mt5_status = self._get_mt5_status()
@@ -712,6 +1053,197 @@ Stealth Mode: {'🔒 ON' if self.stealth_mode else '🔓 OFF'}
                 await query.edit_message_text(channels_summary, parse_mode='Markdown')
             else:
                 await query.edit_message_text("📭 No channels configured.")
+    
+    async def _handle_retry_callback(self, query, user_id: int):
+        """Handle retry button callbacks"""
+        callback_data = query.data
+        action = callback_data.split("_")[1]  # yes, no, edit, details
+        retry_id = "_".join(callback_data.split("_")[2:])
+        
+        # Get pending retry data
+        if retry_id not in self.pending_retries:
+            await query.edit_message_text("❌ Retry request expired or not found.")
+            return
+        
+        retry_data = self.pending_retries[retry_id]
+        trade_data = retry_data["trade_data"]
+        signal_summary = retry_data["signal_summary"]
+        error_message = retry_data["error_message"]
+        
+        if action == "yes":
+            # User chose to retry the trade
+            await self._execute_retry(query, retry_id, trade_data, signal_summary)
+            
+        elif action == "no":
+            # User chose to skip the trade
+            response_msg = f"""
+✅ **Trade Skipped**
+
+**Signal:** {signal_summary.channel_name}
+**Pair:** {trade_data.get('pair', 'Unknown')}
+**Action:** Skipped by user
+**Time:** {datetime.now().strftime('%H:%M:%S')}
+
+The trade has been removed from retry queue.
+            """
+            
+            # Remove from pending retries
+            del self.pending_retries[retry_id]
+            self._remove_pending_retry(retry_id)
+            
+            await query.edit_message_text(response_msg, parse_mode='Markdown')
+            
+        elif action == "edit":
+            # Show edit options
+            await self._show_edit_options(query, retry_id, trade_data, signal_summary)
+            
+        elif action == "details":
+            # Show detailed information
+            await self._show_retry_details(query, retry_id, trade_data, signal_summary, error_message)
+    
+    async def _execute_retry(self, query, retry_id: str, trade_data: Dict, signal_summary: SignalSummary):
+        """Execute the retry trade"""
+        try:
+            # Send trade to API for execution
+            api_base = self.config.get("API_BASE_URL", "http://localhost:5000")
+            
+            # Prepare retry payload
+            retry_payload = {
+                "rawText": signal_summary.raw_text,
+                "channelId": trade_data.get("channel_id"),
+                "source": "telegram_bot_retry",
+                "forced_execution": True,
+                "retry_data": trade_data
+            }
+            
+            response = requests.post(f"{api_base}/api/parse-signal", json=retry_payload, timeout=15)
+            
+            if response.status_code == 200:
+                result = response.json()
+                
+                response_msg = f"""
+✅ **Trade Retry Successful**
+
+**Signal:** {signal_summary.channel_name}
+**Pair:** {result.get('pair', 'Unknown')}
+**Action:** {result.get('action', 'Unknown')}
+**Confidence:** {result.get('confidence', 0)*100:.1f}%
+**Status:** Executed
+**Time:** {datetime.now().strftime('%H:%M:%S')}
+
+The trade has been successfully processed and sent to MT5.
+                """
+                
+                # Log successful retry
+                self._log_command(query.from_user.id, f"retry_executed", retry_id)
+                
+            else:
+                response_msg = f"""
+❌ **Trade Retry Failed**
+
+**Error:** {response.text}
+**Time:** {datetime.now().strftime('%H:%M:%S')}
+
+The retry attempt failed. Please check the system status.
+                """
+            
+            # Remove from pending retries
+            del self.pending_retries[retry_id]
+            self._remove_pending_retry(retry_id)
+            
+            await query.edit_message_text(response_msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            error_msg = f"""
+❌ **Retry Execution Error**
+
+**Error:** {str(e)}
+**Time:** {datetime.now().strftime('%H:%M:%S')}
+
+Please try again or contact system administrator.
+            """
+            await query.edit_message_text(error_msg, parse_mode='Markdown')
+    
+    async def _show_edit_options(self, query, retry_id: str, trade_data: Dict, signal_summary: SignalSummary):
+        """Show edit options for the trade"""
+        edit_msg = f"""
+⚙️ **Edit Trade Parameters**
+
+**Current Values:**
+• Pair: {trade_data.get('pair', 'Unknown')}
+• Action: {trade_data.get('action', 'Unknown')}
+• Lot Size: {trade_data.get('lot_size', 'Unknown')}
+• Entry: {trade_data.get('entry', 'Market')}
+• SL: {trade_data.get('sl', 'None')}
+• TP: {trade_data.get('tp', 'None')}
+
+**Note:** Advanced editing requires manual intervention.
+Use /replay command with corrected parameters or contact admin.
+        """
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Execute As-Is", callback_data=f"retry_yes_{retry_id}"),
+                InlineKeyboardButton("❌ Cancel", callback_data=f"retry_no_{retry_id}")
+            ],
+            [
+                InlineKeyboardButton("📊 View Details", callback_data=f"retry_details_{retry_id}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(edit_msg, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def _show_retry_details(self, query, retry_id: str, trade_data: Dict, signal_summary: SignalSummary, error_message: str):
+        """Show detailed retry information"""
+        confidence_text = f"{signal_summary.confidence*100:.1f}%" if signal_summary.confidence is not None else "N/A"
+        
+        details_msg = f"""
+📊 **Detailed Retry Information**
+
+**Signal Details:**
+• Channel: {signal_summary.channel_name}
+• Timestamp: {signal_summary.timestamp.strftime('%Y-%m-%d %H:%M:%S')}
+• Confidence: {confidence_text}
+
+**Trade Parameters:**
+• Symbol: {trade_data.get('pair', 'Unknown')}
+• Action: {trade_data.get('action', 'Unknown')}
+• Volume: {trade_data.get('lot_size', 'Unknown')} lots
+• Entry Price: {trade_data.get('entry', 'Market order')}
+• Stop Loss: {trade_data.get('sl', 'Not set')}
+• Take Profit: {trade_data.get('tp', 'Not set')}
+
+**Error Information:**
+{error_message}
+
+**Raw Signal Text:**
+{signal_summary.raw_text[:300]}...
+
+**Parsed Data:**
+{json.dumps(signal_summary.parsed_data, indent=2)[:400] if signal_summary.parsed_data else 'None'}...
+        """
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Retry", callback_data=f"retry_yes_{retry_id}"),
+                InlineKeyboardButton("❌ Skip", callback_data=f"retry_no_{retry_id}")
+            ],
+            [
+                InlineKeyboardButton("⚙️ Edit", callback_data=f"retry_edit_{retry_id}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(details_msg, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    def _remove_pending_retry(self, retry_id: str):
+        """Remove pending retry from database"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM pending_retries WHERE id = ?", (retry_id,))
+        conn.commit()
+        conn.close()
     
     # Utility Methods
     
@@ -758,6 +1290,9 @@ Stealth Mode: {'🔒 ON' if self.stealth_mode else '🔓 OFF'}
         logger.info("Starting Telegram Copilot Bot...")
         logger.info(f"Authorized users: {len(self.authorized_users)}")
         logger.info(f"Admin users: {len(self.admin_users)}")
+        
+        # Start monitoring thread
+        self._start_monitoring()
         
         # Start the bot
         self.application.run_polling(allowed_updates=Update.ALL_TYPES)
