@@ -1,0 +1,34 @@
+{
+  "retry_settings": {
+    "max_retries": 5,
+    "retry_window_seconds": 600,
+    "base_delay_seconds": 2,
+    "exponential_backoff": true,
+    "max_delay_seconds": 60
+  },
+  "market_validation": {
+    "max_spread_multiplier": 2.5,
+    "slippage_threshold_pips": 3,
+    "check_market_hours": true,
+    "min_free_margin_percent": 15
+  },
+  "logging": {
+    "retry_log_file": "retry_log.txt",
+    "log_level": "INFO",
+    "max_log_size_mb": 25,
+    "backup_count": 10
+  },
+  "mt5_settings": {
+    "connection_timeout": 10,
+    "reconnection_attempts": 5,
+    "health_check_interval": 45
+  },
+  "advanced_settings": {
+    "queue_max_size": 1000,
+    "processing_threads": 1,
+    "emergency_stop_loss_pips": 50,
+    "auto_adjust_lot_size": true,
+    "min_lot_size": 0.01,
+    "max_lot_size": 10.0
+  }
+}
