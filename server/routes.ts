@@ -6,6 +6,7 @@ import { createHash } from "crypto";
 import fs from "fs";
 import path from "path";
 import terminalRoutes from "../admin-panel/routes/terminal.js";
+import parserRoutes from "../admin-panel/routes/parser.js";
 import terminalRoutes from "../admin-panel/routes/terminal.js";
 
 // Advanced Signal Parser Class
@@ -1012,6 +1013,9 @@ export async function registerRoutes(app: Express): Promise<Express> {
 
   // Register terminal management routes
   app.use(terminalRoutes);
+
+  // Register parser management routes
+  app.use(parserRoutes);
 
   return app;
 }

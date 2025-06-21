@@ -226,14 +226,27 @@ router.post('/api/parser/push', upload.single('parserFile'), async (req: Request
     // Store deployment record
     deployments.set(deployment.id, deployment);
 
-    // Log to database (mock for now - replace with actual DB call)
-    console.log('Parser deployment logged:', {
-      id: deployment.id,
-      filename: deployment.filename,
-      fileHash: deployment.fileHash,
-      deployTimestamp: deployment.deployTimestamp,
-      uploadedBy: deployment.uploadedBy
-    });
+    // Log to database
+    try {
+      const { storage } = await import('../../server/database.js');
+      await storage.createParserDeployment({
+        deploymentId: deployment.id,
+        filename: deployment.filename,
+        originalName: deployment.originalName,
+        fileHash: deployment.fileHash,
+        fileSize: deployment.fileSize,
+        version: deployment.version,
+        uploadedBy: deployment.uploadedBy,
+        status: deployment.status,
+        notifiedTerminals: deployment.notifiedTerminals,
+        totalTerminals: deployment.totalTerminals,
+        description: description || null
+      });
+      console.log('Parser deployment logged to database:', deployment.id);
+    } catch (dbError) {
+      console.error('Failed to log deployment to database:', dbError);
+      // Continue with deployment even if DB logging fails
+    }
 
     // Broadcast to connected terminals
     const broadcastCount = broadcastParserUpdate(deployment);

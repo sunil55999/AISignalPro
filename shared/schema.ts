@@ -190,6 +190,23 @@ export const providerStats = pgTable("provider_stats", {
   lastUpdated: timestamp("last_updated").defaultNow(),
 });
 
+export const parserDeployments = pgTable("parser_deployments", {
+  id: serial("id").primaryKey(),
+  deploymentId: text("deployment_id").notNull().unique(),
+  filename: text("filename").notNull(),
+  originalName: text("original_name").notNull(),
+  fileHash: text("file_hash").notNull(),
+  fileSize: integer("file_size").notNull(),
+  version: text("version").notNull(),
+  deployTimestamp: timestamp("deploy_timestamp").defaultNow(),
+  uploadedBy: text("uploaded_by").notNull(),
+  status: text("status").notNull().default("uploaded"), // uploaded, broadcasting, deployed, failed
+  notifiedTerminals: text("notified_terminals").array().default([]),
+  totalTerminals: integer("total_terminals").default(0),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
@@ -249,6 +266,12 @@ export const insertProviderStatsSchema = createInsertSchema(providerStats).omit(
   lastUpdated: true,
 });
 
+export const insertParserDeploymentSchema = createInsertSchema(parserDeployments).omit({
+  id: true,
+  createdAt: true,
+  deployTimestamp: true,
+});
+
 // Type exports
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -279,3 +302,6 @@ export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 
 export type ProviderStats = typeof providerStats.$inferSelect;
 export type InsertProviderStats = z.infer<typeof insertProviderStatsSchema>;
+
+export type ParserDeployment = typeof parserDeployments.$inferSelect;
+export type InsertParserDeployment = z.infer<typeof insertParserDeploymentSchema>;

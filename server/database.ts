@@ -5,7 +5,8 @@ import {
   User, InsertUser, Signal, InsertSignal, Channel, InsertChannel, 
   Message, InsertMessage, Trade, InsertTrade, ManualRule, InsertManualRule,
   TrainingData, InsertTrainingData, UserSettings, InsertUserSettings,
-  AuditLog, InsertAuditLog, ProviderStats, InsertProviderStats
+  AuditLog, InsertAuditLog, ProviderStats, InsertProviderStats,
+  ParserDeployment, InsertParserDeployment
 } from "../shared/schema.js";
 import { eq, and, gte, lte, desc } from "drizzle-orm";
 
@@ -259,6 +260,31 @@ export class DatabaseStorage {
   async updateProviderStats(channelId: number, stats: Partial<InsertProviderStats>): Promise<ProviderStats | null> {
     const result = await this.db.update(schema.providerStats).set(stats).where(eq(schema.providerStats.channelId, channelId)).returning();
     return result[0] || null;
+  }
+
+  // Parser Deployment operations
+  async createParserDeployment(deployment: InsertParserDeployment): Promise<ParserDeployment> {
+    const result = await this.db.insert(schema.parserDeployments).values(deployment).returning();
+    return result[0];
+  }
+
+  async getParserDeployments(): Promise<ParserDeployment[]> {
+    return await this.db.select().from(schema.parserDeployments).orderBy(desc(schema.parserDeployments.deployTimestamp));
+  }
+
+  async getParserDeploymentById(deploymentId: string): Promise<ParserDeployment | null> {
+    const deployments = await this.db.select().from(schema.parserDeployments).where(eq(schema.parserDeployments.deploymentId, deploymentId));
+    return deployments[0] || null;
+  }
+
+  async updateParserDeployment(deploymentId: string, deployment: Partial<InsertParserDeployment>): Promise<ParserDeployment | null> {
+    const result = await this.db.update(schema.parserDeployments).set(deployment).where(eq(schema.parserDeployments.deploymentId, deploymentId)).returning();
+    return result[0] || null;
+  }
+
+  async deleteParserDeployment(deploymentId: string): Promise<boolean> {
+    const result = await this.db.delete(schema.parserDeployments).where(eq(schema.parserDeployments.deploymentId, deploymentId));
+    return result.rowCount > 0;
   }
 
   // Health check
