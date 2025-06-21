@@ -1,197 +1,132 @@
-import type { Express } from "express";
-import { createServer, type Server } from "http";
-import { fallbackStorage as storage } from "./fallback-storage";
-import { 
-  insertSignalSchema, 
-  insertManualRuleSchema, 
-  insertTrainingDataSchema,
-  insertChannelSchema,
-  insertMessageSchema,
-  insertTradeSchema,
-  insertUserSettingsSchema,
-  insertAuditLogSchema
-} from "@shared/schema";
-import { z } from "zod";
-import fs from "fs/promises";
+import express, { type Express } from "express";
+import { type Server } from "http";
+import { storage } from "./database.js";
+import { fallbackStorage } from "./fallback-storage.js";
+import { createHash } from "crypto";
+import fs from "fs";
 import path from "path";
 
-// ============= USER AUTHENTICATION SYSTEM =============
-
-// Simple authentication middleware
-const authenticateUser = async (req: any, res: any, next: any) => {
-  // For demo purposes, we'll use a simple user ID from headers or default to admin
-  const userId = req.headers['x-user-id'] || req.query.userId || 1;
-  const user = await storage.getUserById(parseInt(userId as string));
-  
-  if (!user) {
-    return res.status(401).json({ error: "User not found" });
-  }
-  
-  req.user = user;
-  next();
-};
-
-// Enhanced AI Signal Parser with advanced capabilities
+// Advanced Signal Parser Class
 class AdvancedSignalParser {
   private processedSignals = new Set<string>(); // Signal deduplication
   private globalMinConfidence = 0.85; // Global confidence threshold
-  
+
   private tradingPairs = [
-    'XAUUSD', 'EURUSD', 'GBPJPY', 'GBPUSD', 'USDJPY', 'USDCAD', 
-    'AUDUSD', 'NZDUSD', 'EURJPY', 'EURGBP', 'AUDJPY', 'CHFJPY'
+    "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD",
+    "EURJPY", "EURGBP", "GBPJPY", "AUDJPY", "NZDJPY", "XAUUSD", "GOLD",
+    "XAGUSD", "SILVER", "BTCUSD", "ETHUSD", "US30", "SPX500", "NAS100"
   ];
-  
+
   private actionWords = {
-    buy: ['buy', 'long', 'bull', 'go long', 'enter long'],
-    sell: ['sell', 'short', 'bear', 'go short', 'enter short'],
-    buystop: ['buy stop', 'buystop', 'buy limit'],
-    sellstop: ['sell stop', 'sellstop', 'sell limit']
+    buy: ["buy", "long", "bullish", "call", "上涨", "买入"],
+    sell: ["sell", "short", "bearish", "put", "下跌", "卖出"]
   };
 
   private intentPatterns = {
-    open_trade: ['buy', 'sell', 'enter', 'open', 'take'],
-    modify_sl: ['sl to be', 'move sl', 'adjust sl', 'breakeven', 'be'],
-    close_partial: ['close', 'partial', 'take profit', 'secure'],
-    cancel: ['cancel', 'dont enter', "don't enter", 'skip', 'avoid'],
-    reopen: ['reopen', 're-enter', 'retry']
+    trade: /(?:buy|sell|long|short|bullish|bearish)/i,
+    modify: /(?:move|set|adjust|update|change).*(?:sl|stop|tp|target)/i,
+    close: /(?:close|exit|take profit|stop loss hit)/i
   };
 
   async parseSignal(rawText: string, source: 'text' | 'ocr' = 'text', channelId?: number): Promise<any> {
-    // Create signal hash for deduplication
     const signalHash = this.createSignalHash(rawText, channelId);
     
-    // Check for duplicate signals
     if (this.processedSignals.has(signalHash)) {
-      return {
-        success: false,
-        error: 'Duplicate signal detected',
-        confidence: 0,
-        isDuplicate: true
-      };
+      return { error: "Signal already processed", duplicate: true };
     }
 
-    const text = rawText.toLowerCase();
-    
-    // Check manual rules first if confidence might be low
-    let manualRuleResult = null;
+    // Check manual rules first if channelId provided
     if (channelId) {
-      manualRuleResult = await this.checkManualRules(text, channelId);
+      const manualResult = await this.checkManualRules(rawText, channelId);
+      if (manualResult && manualResult.confidence >= this.globalMinConfidence) {
+        this.markSignalProcessed(signalHash);
+        return manualResult;
+      }
     }
+
+    const pair = this.extractTradingPair(rawText);
+    const action = this.extractAction(rawText);
+    const entry = this.extractPrice(rawText, ["entry", "at", "@", "price"]);
+    const sl = this.extractPrice(rawText, ["sl", "stop loss", "stop"]);
+    const tp = this.extractTakeProfits(rawText);
+    const intent = this.determineIntent(rawText);
+    const orderType = this.determineOrderType(rawText);
+    const modifications = this.extractModifications(rawText);
+    const slIncrease = this.extractSlIncrease(rawText);
+    const volumePercent = this.extractVolumePercent(rawText);
+
+    const confidence = this.calculateConfidence(pair, action, entry, sl, tp, rawText);
     
-    // Extract trading data
-    const pair = this.extractTradingPair(text);
-    const action = this.extractAction(text);
-    const entry = this.extractPrice(text, ['@', 'at', 'entry', 'price']);
-    const sl = this.extractPrice(text, ['sl', 'stop loss', 'stoploss', 'stop']);
-    const tp = this.extractTakeProfits(text);
-    const intent = this.determineIntent(text);
-    const orderType = this.determineOrderType(text);
-    const modifications = this.extractModifications(text);
-    const volumePercent = this.extractVolumePercent(text);
-    
-    // Calculate confidence
-    const confidence = this.calculateConfidence(pair, action, entry, sl, tp, text);
-    
-    // Use manual rule if AI confidence is low
-    const useManualRule = confidence < 0.85 && manualRuleResult;
-    
+    if (!this.meetsConfidenceThreshold(confidence)) {
+      return { error: "Signal confidence below threshold", confidence, threshold: this.globalMinConfidence };
+    }
+
+    this.markSignalProcessed(signalHash);
+
     return {
-      intent: useManualRule ? manualRuleResult.intent : intent,
-      pair: useManualRule ? manualRuleResult.pair || pair : pair,
-      action: useManualRule ? manualRuleResult.action || action : action,
-      entry: useManualRule ? manualRuleResult.entry || entry : entry,
-      sl: useManualRule ? manualRuleResult.sl || sl : sl,
-      tp: useManualRule ? manualRuleResult.tp || tp : tp,
-      order_type: orderType,
-      volume_percent: volumePercent,
+      pair,
+      action,
+      entry,
+      sl,
+      tp,
+      intent,
+      orderType,
+      confidence,
       modifications,
+      slIncrease,
+      volumePercent,
       source,
-      confidence: useManualRule ? Math.min(confidence + 0.2, 1.0) : confidence,
-      manual_rule_applied: useManualRule,
-      manual_rule_id: useManualRule ? manualRuleResult.ruleId : null,
-      raw_text: rawText
+      channelId,
+      rawText,
+      timestamp: new Date().toISOString()
     };
   }
 
   private async checkManualRules(text: string, channelId: number): Promise<any> {
-    const rules = await storage.getActiveManualRules(channelId);
-    
-    for (const rule of rules) {
-      if (text.includes(rule.pattern.toLowerCase())) {
-        // Increment usage counter
-        await storage.incrementRuleUsage(rule.id);
-        
-        // Parse rule action to extract structured data
-        const ruleAction = rule.action.toLowerCase();
-        let intent = 'modify_sl';
-        let modifications: any = {};
-        
-        if (ruleAction.includes('partial') || ruleAction.includes('close')) {
-          intent = 'close_partial';
-          const percentMatch = ruleAction.match(/(\d+)%/);
-          if (percentMatch) {
-            modifications.volume_percent = parseInt(percentMatch[1]);
-          }
-        } else if (ruleAction.includes('sl') && ruleAction.includes('entry')) {
-          intent = 'modify_sl';
-          modifications.sl_to_be = true;
-        } else if (ruleAction.includes('cancel')) {
-          intent = 'cancel';
-          modifications.cancel = true;
+    try {
+      const rules = await storage.getActiveManualRules();
+      const channelRules = rules.filter(rule => rule.channelId === channelId);
+      
+      for (const rule of channelRules) {
+        const regex = new RegExp(rule.pattern, 'gi');
+        if (regex.test(text)) {
+          await storage.incrementRuleUsage(rule.id);
+          return {
+            pair: rule.defaultPair,
+            action: rule.defaultAction,
+            entry: rule.defaultEntry,
+            sl: rule.defaultSl,
+            tp: rule.defaultTp ? [rule.defaultTp] : [],
+            confidence: 0.95,
+            source: 'manual_rule',
+            ruleId: rule.id
+          };
         }
-        
-        return {
-          intent,
-          modifications,
-          ruleId: rule.id,
-          pair: null, // Will use AI-extracted pair
-          action: null,
-          entry: null,
-          sl: null,
-          tp: null
-        };
       }
+    } catch (error) {
+      console.error('Manual rules check failed:', error);
     }
-    
     return null;
   }
 
   private extractTradingPair(text: string): string | null {
-    // Direct pair matching
+    const upperText = text.toUpperCase();
     for (const pair of this.tradingPairs) {
-      if (text.includes(pair.toLowerCase())) {
+      if (upperText.includes(pair)) {
         return pair;
       }
     }
-    
-    // Special cases and synonyms
-    if (text.includes('gold') || text.includes('xau')) return 'XAUUSD';
-    if (text.includes('silver') || text.includes('xag')) return 'XAGUSD';
-    if (text.includes('oil') || text.includes('crude')) return 'USOIL';
-    if (text.includes('btc') || text.includes('bitcoin')) return 'BTCUSD';
-    if (text.includes('eth') || text.includes('ethereum')) return 'ETHUSD';
-    
-    // Currency combination detection
-    const currencies = ['eur', 'usd', 'gbp', 'jpy', 'aud', 'nzd', 'cad', 'chf'];
-    const foundCurrencies = currencies.filter(curr => text.includes(curr));
-    
-    if (foundCurrencies.length >= 2) {
-      const base = foundCurrencies[0].toUpperCase();
-      const quote = foundCurrencies[1].toUpperCase();
-      const potentialPair = base + quote;
-      
-      if (this.tradingPairs.includes(potentialPair)) {
-        return potentialPair;
-      }
-    }
-    
     return null;
   }
 
   private extractAction(text: string): string | null {
+    const lowerText = text.toLowerCase();
+    
     for (const [action, words] of Object.entries(this.actionWords)) {
       for (const word of words) {
-        if (text.includes(word)) return action;
+        if (lowerText.includes(word)) {
+          return action;
+        }
       }
     }
     return null;
@@ -199,286 +134,168 @@ class AdvancedSignalParser {
 
   private extractPrice(text: string, indicators: string[]): number | null {
     for (const indicator of indicators) {
-      const patterns = [
-        new RegExp(`${indicator}[\\s]*([0-9]+(?:\\.[0-9]+)?)`, 'i'),
-        new RegExp(`${indicator}[:\\s]*([0-9]+(?:\\.[0-9]+)?)`, 'i'),
-        new RegExp(`${indicator}[\\s=:]*([0-9]+(?:\\.[0-9]+)?)`, 'i')
-      ];
-      
-      for (const pattern of patterns) {
-        const match = text.match(pattern);
-        if (match) return parseFloat(match[1]);
+      const regex = new RegExp(`${indicator}[:\\s@]*([0-9]+\\.?[0-9]*)`, 'gi');
+      const match = text.match(regex);
+      if (match) {
+        const price = parseFloat(match[0].replace(/[^0-9.]/g, ''));
+        if (!isNaN(price)) return price;
       }
     }
     return null;
   }
 
   private extractTakeProfits(text: string): number[] {
+    const tpRegex = /tp[:\s]*([0-9]+\.?[0-9]*)[,\s]*([0-9]+\.?[0-9]*)?[,\s]*([0-9]+\.?[0-9]*)?/gi;
+    const matches = text.match(tpRegex);
+    
+    if (!matches) return [];
+    
     const tps: number[] = [];
-    
-    // Multiple TP patterns
-    const patterns = [
-      /tp[^\d]*([0-9]+(?:\.[0-9]+)?)/gi,
-      /take\s*profit[^\d]*([0-9]+(?:\.[0-9]+)?)/gi,
-      /target[^\d]*([0-9]+(?:\.[0-9]+)?)/gi
-    ];
-    
-    for (const pattern of patterns) {
-      let match;
-      while ((match = pattern.exec(text)) !== null) {
-        tps.push(parseFloat(match[1]));
+    for (const match of matches) {
+      const numbers = match.match(/[0-9]+\.?[0-9]*/g);
+      if (numbers) {
+        tps.push(...numbers.map(n => parseFloat(n)).filter(n => !isNaN(n)));
       }
     }
     
-    // Look for sequential numbers after TP
-    const multiTpRegex = /tp[^\d]*([0-9]+(?:\.[0-9]+)?)[^\d]*([0-9]+(?:\.[0-9]+)?)/i;
-    const multiMatch = text.match(multiTpRegex);
-    if (multiMatch && tps.length === 0) {
-      tps.push(parseFloat(multiMatch[1]));
-      tps.push(parseFloat(multiMatch[2]));
-    }
-    
-    return [...new Set(tps)]; // Remove duplicates
+    return tps;
   }
 
   private determineIntent(text: string): string {
-    for (const [intent, patterns] of Object.entries(this.intentPatterns)) {
-      for (const pattern of patterns) {
-        if (text.includes(pattern)) return intent;
+    for (const [intent, pattern] of Object.entries(this.intentPatterns)) {
+      if (pattern.test(text)) {
+        return intent;
       }
     }
-    
-    // Default intent based on content
-    if (text.includes('%') && (text.includes('close') || text.includes('partial'))) {
-      return 'close_partial';
-    }
-    
-    return 'open_trade';
+    return 'trade';
   }
 
   private determineOrderType(text: string): string {
-    if (text.includes('now') || text.includes('immediately') || text.includes('market')) {
-      return 'market';
-    }
-    if (text.includes('stop') || text.includes('limit') || text.includes('pending')) {
-      return 'pending';
-    }
-    if (text.includes('partial')) {
-      return 'partial';
-    }
+    if (/pending|limit|stop/i.test(text)) return 'pending';
+    if (/market|now|immediately/i.test(text)) return 'market';
     return 'market';
   }
 
   private extractModifications(text: string): any {
-    return {
-      sl_to_be: text.includes('sl to be') || text.includes('breakeven') || text.includes(' be '),
-      increase_sl: this.extractSlIncrease(text),
-      tp_update: null,
-      cancel: text.includes('cancel') || text.includes("don't enter"),
-      secure_profits: text.includes('secure') || text.includes('lock'),
-      trail_sl: text.includes('trail') || text.includes('trailing')
-    };
+    const modifications: any = {};
+    
+    if (/move.*sl.*be|sl.*be/i.test(text)) {
+      modifications.moveSlToBreakeven = true;
+    }
+    
+    if (/close.*50%|50%.*close/i.test(text)) {
+      modifications.partialClose = 50;
+    }
+    
+    return modifications;
   }
 
   private extractSlIncrease(text: string): number | null {
-    const patterns = [
-      /(?:increase|move|adjust).*sl.*?([0-9]+).*?pips?/i,
-      /sl.*?(?:to|at).*?([0-9]+(?:\.[0-9]+)?)/i,
-      /move.*?stop.*?([0-9]+)/i
-    ];
-    
-    for (const pattern of patterns) {
-      const match = text.match(pattern);
-      if (match) return parseFloat(match[1]);
-    }
-    
-    return null;
+    const slIncreaseRegex = /sl.*\+([0-9]+)/i;
+    const match = text.match(slIncreaseRegex);
+    return match ? parseFloat(match[1]) : null;
   }
 
   private extractVolumePercent(text: string): number | null {
-    const patterns = [
-      /(?:close|partial|take).*?([0-9]+)%/i,
-      /([0-9]+)%.*?(?:close|partial)/i,
-      /([0-9]+)\s*percent/i
-    ];
-    
-    for (const pattern of patterns) {
-      const match = text.match(pattern);
-      if (match) return parseFloat(match[1]);
-    }
-    
-    return null;
+    const volumeRegex = /([0-9]+)%.*volume|volume.*([0-9]+)%/i;
+    const match = text.match(volumeRegex);
+    return match ? parseFloat(match[1] || match[2]) : null;
   }
 
-  // Signal deduplication helper
   private createSignalHash(rawText: string, channelId?: number): string {
-    const normalizedText = rawText.toLowerCase().replace(/\s+/g, ' ').trim();
-    const timestamp = Math.floor(Date.now() / 60000); // 1-minute window
-    return `${channelId || 'unknown'}_${normalizedText}_${timestamp}`;
+    const hashInput = `${rawText.trim()}-${channelId || 'unknown'}-${Date.now()}`;
+    return createHash('md5').update(hashInput).digest('hex');
   }
 
-  // Add signal to processed set with cleanup
   private markSignalProcessed(signalHash: string): void {
     this.processedSignals.add(signalHash);
-    
-    // Clean up old signals (keep last 1000)
-    if (this.processedSignals.size > 1000) {
-      const signals = Array.from(this.processedSignals);
-      signals.slice(0, 200).forEach(hash => this.processedSignals.delete(hash));
-    }
   }
 
-  // Enhanced confidence check with global threshold
   private meetsConfidenceThreshold(confidence: number): boolean {
     return confidence >= this.globalMinConfidence;
   }
 
   private calculateConfidence(pair: string | null, action: string | null, entry: number | null, sl: number | null, tp: number[], text: string): number {
-    let score = 0;
+    let confidence = 0;
     
-    // Core elements scoring
-    if (pair) score += 0.25;
-    if (action) score += 0.25;
-    if (entry) score += 0.15;
-    if (sl) score += 0.1;
-    if (tp.length > 0) score += 0.1;
+    if (pair) confidence += 0.3;
+    if (action) confidence += 0.3;
+    if (entry) confidence += 0.2;
+    if (sl) confidence += 0.1;
+    if (tp.length > 0) confidence += 0.1;
     
-    // Additional context scoring
-    if (text.includes('now') || text.includes('immediately')) score += 0.05;
-    if (text.includes('@') || text.includes('at')) score += 0.05;
-    if (tp.length > 1) score += 0.05; // Multiple TPs
+    // Bonus for clear signal structure
+    if (text.includes('@') || text.includes(':')) confidence += 0.05;
+    if (/\d+\.\d+/.test(text)) confidence += 0.05;
     
-    // Penalty for incomplete signals
-    if (!pair && !action) score -= 0.2;
-    if (text.length < 10) score -= 0.1;
-    
-    // Add some realistic variance
-    const variance = (Math.random() - 0.5) * 0.1;
-    return Math.max(0, Math.min(1, score + variance));
+    return Math.min(confidence, 1.0);
   }
 }
 
-// Trade Dispatcher for MT5 integration
+// Trade Dispatcher Class
 class TradeDispatcher {
   private mt5OutputPath = "./mt5_signals.json";
   private userSignalPaths = new Map<number, string>();
-  
+
   constructor() {
     // Initialize user-specific signal paths
     this.userSignalPaths.set(1, "C:\\TradingSignals\\user1.json");
   }
-  
+
   async dispatchTrade(signal: any, userSettings: any): Promise<any> {
-    // Apply user risk management and filters
     const trade = this.applyRiskManagement(signal, userSettings);
     
     if (!trade) {
-      return { success: false, reason: "Trade filtered by risk management" };
+      return { error: "Trade rejected by risk management" };
     }
-    
-    // Create trade record
-    const tradeRecord = await storage.createTrade({
-      signalId: signal.signalId,
-      userId: userSettings.userId,
-      symbol: signal.pair,
-      action: signal.action,
-      entry: signal.entry,
-      sl: signal.sl,
-      tp: signal.tp,
-      lot: trade.lot,
-      orderType: signal.order_type || 'market',
-      status: 'pending',
-      executedAt: null,
-      result: null,
-      pnl: null
-    });
-    
-    // Output for MT5 EA (both generic and user-specific)
+
+    // Output to MT5
     await this.outputToMT5(trade);
-    await this.outputToUserSpecificPath(trade, userSettings.userId);
     
-    // Log audit trail
-    await storage.createAuditLog({
-      userId: userSettings.userId,
-      action: 'trade_dispatched',
-      entityType: 'trade',
-      entityId: tradeRecord.id,
-      details: { signal, trade, userSettings }
-    });
-    
-    return { success: true, trade: tradeRecord, mt5Signal: trade };
+    // Output to user-specific path if configured
+    if (userSettings.userId) {
+      await this.outputToUserSpecificPath(trade, userSettings.userId);
+    }
+
+    return { success: true, trade };
   }
-  
+
   private applyRiskManagement(signal: any, userSettings: any): any | null {
-    // Check if signal copier is enabled
-    if (!userSettings.enableSignalCopier) return null;
+    const { maxLot = 0.1, riskPercent = 2.0, minConfidence = 0.85 } = userSettings;
     
-    // Check confidence threshold
-    if (signal.confidence < (userSettings.tradeFilters?.minConfidence || 0.8)) {
+    if (signal.confidence < minConfidence) {
       return null;
     }
+
+    const pipValue = this.getPipValue(signal.pair);
+    const riskAmount = (userSettings.accountBalance || 10000) * (riskPercent / 100);
+    const pipRisk = Math.abs(signal.entry - signal.sl) / pipValue;
     
-    // Calculate lot size based on risk percentage
-    const accountBalance = 10000; // Mock account balance
-    const riskAmount = accountBalance * (userSettings.riskPercent / 100);
-    
-    let lotSize = userSettings.maxLot || 0.1;
-    
-    if (signal.sl && signal.entry) {
-      const riskPips = Math.abs(signal.entry - signal.sl);
-      const pipValue = this.getPipValue(signal.pair);
-      const calculatedLot = riskAmount / (riskPips * pipValue);
-      lotSize = Math.min(calculatedLot, userSettings.maxLot);
-    }
-    
+    let lotSize = riskAmount / (pipRisk * 10);
+    lotSize = Math.min(lotSize, maxLot);
+    lotSize = Math.max(lotSize, 0.01);
+
     return {
-      symbol: signal.pair,
-      action: signal.action,
-      entry: signal.entry,
-      sl: signal.sl,
-      tp: signal.tp,
-      lot: Math.round(lotSize * 100) / 100, // Round to 2 decimals
-      order_type: signal.order_type || 'market',
-      comment: `AI Signal - Confidence: ${Math.round(signal.confidence * 100)}%`
+      ...signal,
+      lotSize: parseFloat(lotSize.toFixed(2)),
+      riskAmount,
+      pipRisk,
+      timestamp: new Date().toISOString()
     };
   }
-  
+
   private getPipValue(pair: string): number {
-    // Mock pip values for different pairs
     const pipValues: { [key: string]: number } = {
-      'EURUSD': 10, 'GBPUSD': 10, 'AUDUSD': 10, 'NZDUSD': 10,
-      'USDJPY': 9.09, 'USDCAD': 7.69, 'USDCHF': 10,
-      'EURJPY': 9.09, 'GBPJPY': 9.09, 'AUDJPY': 9.09,
-      'XAUUSD': 1, 'XAGUSD': 50
+      "EURUSD": 0.0001, "GBPUSD": 0.0001, "USDJPY": 0.01,
+      "USDCHF": 0.0001, "USDCAD": 0.0001, "AUDUSD": 0.0001,
+      "NZDUSD": 0.0001, "XAUUSD": 0.01, "GOLD": 0.01
     };
-    
-    return pipValues[pair] || 10;
+    return pipValues[pair] || 0.0001;
   }
-  
+
   private async outputToMT5(trade: any): Promise<void> {
     try {
-      // Read existing signals
-      let signals: any[] = [];
-      try {
-        const data = await fs.readFile(this.mt5OutputPath, 'utf-8');
-        signals = JSON.parse(data);
-      } catch (error) {
-        // File doesn't exist yet
-      }
-      
-      // Add new signal
-      signals.push({
-        timestamp: new Date().toISOString(),
-        ...trade
-      });
-      
-      // Keep only last 100 signals
-      if (signals.length > 100) {
-        signals = signals.slice(-100);
-      }
-      
-      // Write back to file
-      await fs.writeFile(this.mt5OutputPath, JSON.stringify(signals, null, 2));
+      await fs.promises.writeFile(this.mt5OutputPath, JSON.stringify(trade, null, 2));
     } catch (error) {
       console.error('Failed to output to MT5:', error);
     }
@@ -486,1164 +303,169 @@ class TradeDispatcher {
 
   private async outputToUserSpecificPath(trade: any, userId: number): Promise<void> {
     const userPath = this.userSignalPaths.get(userId);
-    if (!userPath) return;
-
-    try {
-      // Create stealth-optimized signal format for EA
-      const stealthSignal = {
-        symbol: trade.symbol,
-        action: trade.action,
-        entry: trade.entry,
-        sl: trade.sl,
-        tp: trade.tp,
-        lot: trade.lot,
-        order_type: trade.order_type || 'market',
-        delay_ms: Math.floor(Math.random() * 2000) + 500, // Random delay 0.5-2.5s
-        partial_close: 0,
-        move_sl_to_be: true,
-        timestamp: new Date().toISOString(),
-        comment: "Manual"
-      };
-
-      // Write to user-specific path for EA consumption
-      await fs.writeFile(userPath, JSON.stringify(stealthSignal, null, 2));
-      
-      // Log for audit
-      console.log(`Signal dispatched to ${userPath} for user ${userId}`);
-    } catch (error) {
-      console.error(`Failed to output to user path ${userPath}:`, error);
+    if (userPath) {
+      try {
+        // Ensure directory exists
+        const dir = path.dirname(userPath);
+        await fs.promises.mkdir(dir, { recursive: true });
+        await fs.promises.writeFile(userPath, JSON.stringify(trade, null, 2));
+      } catch (error) {
+        console.error(`Failed to output to user path ${userPath}:`, error);
+      }
     }
   }
 }
 
-const signalParser = new AdvancedSignalParser();
-const tradeDispatcher = new TradeDispatcher();
-
 export async function registerRoutes(app: Express): Promise<Server> {
-  
-  // Setup wizard endpoints
-  app.post('/api/setup/complete', async (req, res) => {
-    try {
-      const { mode, telegram, mt5, riskSettings } = req.body;
-      
-      // Create user settings based on setup
-      const userId = 1; // Get from session
-      const setupConfig = {
-        userId,
-        mode,
-        telegramConnected: telegram.connected,
-        channels: JSON.stringify(telegram.channels),
-        mt5Config: JSON.stringify(mt5),
-        maxLot: riskSettings.maxLot,
-        riskPercent: riskSettings.riskPercent,
-        maxDailyTrades: riskSettings.maxDailyTrades,
-        executionMode: riskSettings.executionMode,
-        setupCompleted: true,
-        completedAt: new Date().toISOString()
-      };
-      
-      await storage.updateUserSettings(userId, setupConfig);
-      res.json({ success: true, message: 'Setup completed successfully' });
-    } catch (error) {
-      console.error('Setup completion error:', error);
-      res.status(500).json({ error: 'Failed to complete setup' });
-    }
-  });
+  const signalParser = new AdvancedSignalParser();
+  const tradeDispatcher = new TradeDispatcher();
 
-  // Telegram integration endpoints
-  app.post('/api/telegram/sessions', async (req, res) => {
-    try {
-      const { phoneNumber, apiId, apiHash } = req.body;
-      
-      // In a real implementation, this would connect to Telegram API
-      const session = {
-        id: Date.now().toString(),
-        phoneNumber,
-        apiId,
-        apiHash,
-        isConnected: true,
-        connectedAt: new Date().toISOString()
-      };
-      
-      res.json({ success: true, session });
-    } catch (error) {
-      console.error('Telegram session error:', error);
-      res.status(500).json({ error: 'Failed to connect Telegram session' });
+  // Authentication middleware
+  const requireAuth = (req: any, res: any, next: any) => {
+    if (req.session?.user) {
+      next();
+    } else {
+      res.status(401).json({ error: "Authentication required" });
     }
-  });
+  };
 
-  app.get('/api/telegram/sessions', async (req, res) => {
-    try {
-      // Mock data - replace with real session management
-      const sessions = [
-        {
-          id: '1',
-          username: 'trader_pro',
-          firstName: 'John',
-          lastName: 'Doe',
-          phoneNumber: '+1234567890',
-          isOnline: true,
-          lastSeen: 'Online'
-        }
-      ];
-      res.json(sessions);
-    } catch (error) {
-      console.error('Get sessions error:', error);
-      res.status(500).json({ error: 'Failed to get sessions' });
-    }
-  });
-
-  app.post('/api/telegram/channels/toggle', async (req, res) => {
-    try {
-      const { channelId, active } = req.body;
-      
-      // Update channel status in database
-      const channel = await storage.getChannelById(parseInt(channelId));
-      if (channel) {
-        await storage.updateChannel(parseInt(channelId), { isActive: active });
-        res.json({ success: true });
-      } else {
-        res.status(404).json({ error: 'Channel not found' });
-      }
-    } catch (error) {
-      console.error('Channel toggle error:', error);
-      res.status(500).json({ error: 'Failed to toggle channel' });
-    }
-  });
-
-  // MT5 integration endpoints
-  app.post('/api/mt5/accounts', async (req, res) => {
-    try {
-      const { login, broker, serverName, accountType, signalPath, executionMode } = req.body;
-      
-      const account = {
-        id: Date.now().toString(),
-        login,
-        broker,
-        serverName,
-        accountType,
-        signalPath,
-        executionMode,
-        isConnected: true,
-        connectedAt: new Date().toISOString()
-      };
-      
-      res.json({ success: true, account });
-    } catch (error) {
-      console.error('MT5 account error:', error);
-      res.status(500).json({ error: 'Failed to add MT5 account' });
-    }
-  });
-
-  app.get('/api/mt5/accounts', async (req, res) => {
-    try {
-      // Mock data - replace with real account management
-      const accounts = [
-        {
-          id: '1',
-          login: '12345678',
-          broker: 'IC Markets',
-          serverName: 'ICMarkets-Demo',
-          accountType: 'demo',
-          balance: 10000,
-          equity: 10250,
-          margin: 500,
-          freeMargin: 9750,
-          marginLevel: 2050,
-          isConnected: true,
-          lastUpdate: '2 minutes ago',
-          executionMode: 'semi-auto',
-          signalPath: 'C:\\TradingSignals\\signals.json'
-        }
-      ];
-      res.json(accounts);
-    } catch (error) {
-      console.error('Get MT5 accounts error:', error);
-      res.status(500).json({ error: 'Failed to get MT5 accounts' });
-    }
-  });
-
-  app.patch('/api/mt5/accounts/:id', async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { executionMode } = req.body;
-      
-      // Update execution mode in database
-      res.json({ success: true, message: 'Execution mode updated' });
-    } catch (error) {
-      console.error('MT5 account update error:', error);
-      res.status(500).json({ error: 'Failed to update account' });
-    }
-  });
-  
-  // ============= PARSER CONTROL ENDPOINTS =============
-  
-  // Get parser settings
-  app.get('/api/parser/settings', async (req, res) => {
-    try {
-      const settings = {
-        minConfidence: 85,
-        enableOCR: true,
-        autoLearning: true,
-        processingMode: 'balanced',
-        maxRate: 10,
-        autoExecution: false
-      };
-      res.json(settings);
-    } catch (error) {
-      console.error('Get parser settings error:', error);
-      res.status(500).json({ error: 'Failed to get parser settings' });
-    }
-  });
-
-  // Update parser settings
-  app.put('/api/parser/settings', async (req, res) => {
-    try {
-      const settings = req.body;
-      // In a real implementation, save to database
-      console.log('Updated parser settings:', settings);
-      res.json({ success: true, message: 'Settings updated successfully' });
-    } catch (error) {
-      console.error('Update parser settings error:', error);
-      res.status(500).json({ error: 'Failed to update parser settings' });
-    }
-  });
-
-  // Get parser status
-  app.get('/api/parser/status', async (req, res) => {
-    try {
-      const status = {
-        isActive: true,
-        accuracy: 89.2,
-        processed: 247,
-        lastUpdate: new Date().toISOString()
-      };
-      res.json(status);
-    } catch (error) {
-      console.error('Get parser status error:', error);
-      res.status(500).json({ error: 'Failed to get parser status' });
-    }
-  });
-
-  // Control parser (start/stop/restart)
-  app.post('/api/parser/control', async (req, res) => {
-    try {
-      const { action } = req.body;
-      
-      let message = '';
-      switch (action) {
-        case 'start':
-          message = 'Parser started successfully';
-          break;
-        case 'stop':
-          message = 'Parser stopped successfully';
-          break;
-        case 'restart':
-          message = 'Parser restarted successfully';
-          break;
-        default:
-          return res.status(400).json({ error: 'Invalid action' });
-      }
-      
-      console.log(`Parser control: ${action}`);
-      res.json({ success: true, message });
-    } catch (error) {
-      console.error('Parser control error:', error);
-      res.status(500).json({ error: 'Failed to control parser' });
-    }
-  });
-
-  // Generate weekly report
-  app.post('/api/reports/weekly', async (req, res) => {
-    try {
-      // Simulate report generation
-      const reportData = {
-        week: new Date().toISOString().split('T')[0],
-        totalSignals: 156,
-        successfulParsing: 138,
-        accuracy: 88.5,
-        totalTrades: 142,
-        winRate: 72.5,
-        profit: 2340.50
-      };
-      
-      res.json({ 
-        success: true, 
-        reportData,
-        downloadUrl: '/api/reports/download/weekly-' + Date.now() + '.pdf'
-      });
-    } catch (error) {
-      console.error('Generate report error:', error);
-      res.status(500).json({ error: 'Failed to generate report' });
-    }
-  });
-
-  // ============= USER AUTHENTICATION ENDPOINTS =============
-
-  // Login endpoint
-  app.post("/api/auth/login", async (req, res) => {
-    try {
-      const { username, password } = req.body;
-      
-      if (!username || !password) {
-        return res.status(400).json({ error: "Username and password required" });
-      }
-      
-      const users = await storage.getUsers();
-      const user = users.find(u => u.username === username && u.password === password);
-      
-      if (!user) {
-        return res.status(401).json({ error: "Invalid credentials" });
-      }
-      
-      if (!user.isActive) {
-        return res.status(403).json({ error: "Account is disabled" });
-      }
-      
-      // Create audit log for login
-      await storage.createAuditLog({
-        userId: user.id,
-        action: "LOGIN",
-        entityType: "user",
-        entityId: user.id,
-        details: { username: user.username, timestamp: new Date() }
-      });
-      
-      res.json({ 
-        success: true, 
-        user: { 
-          id: user.id, 
-          username: user.username, 
-          isAdmin: user.isAdmin 
-        } 
-      });
-    } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({ error: "Login failed" });
-    }
-  });
-
-  // Get current user session
-  app.get("/api/auth/me", async (req, res) => {
-    try {
-      // Default to admin user for demo
-      const userId = req.headers['x-user-id'] || 1;
-      const user = await storage.getUserById(parseInt(userId as string));
-      
-      if (!user) {
-        return res.status(401).json({ error: "User not found" });
-      }
-      
-      res.json({ 
-        id: user.id, 
-        username: user.username, 
-        isAdmin: user.isAdmin,
-        isActive: user.isActive 
-      });
-    } catch (error) {
-      console.error("Get user session error:", error);
-      res.status(500).json({ error: "Failed to get user session" });
-    }
-  });
-  
-  // ============= PARSER CONTROL ENDPOINTS =============
-
-  // Get parser settings
-  app.get("/api/parser/settings", async (req, res) => {
-    try {
-      const settings = {
-        minConfidence: 85,
-        enableOCR: true,
-        autoLearning: true,
-        processingMode: "balanced",
-        maxRate: 10,
-        realTime: true,
-        stopWords: "",
-        triggers: "",
-        debugMode: false,
-        scheduledMaintenance: true
-      };
-      res.json(settings);
-    } catch (error) {
-      console.error("Get parser settings error:", error);
-      res.status(500).json({ error: "Failed to get parser settings" });
-    }
-  });
-
-  // Update parser settings
-  app.put("/api/parser/settings", async (req, res) => {
-    try {
-      const settings = req.body;
-      // In production, save to database
-      res.json({ success: true, settings });
-    } catch (error) {
-      console.error("Update parser settings error:", error);
-      res.status(500).json({ error: "Failed to update parser settings" });
-    }
-  });
-
-  // Get parser status
-  app.get("/api/parser/status", async (req, res) => {
-    try {
-      const signals = await storage.getSignals();
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const todaySignals = signals.filter(s => new Date(s.createdAt || '') >= today);
-      const successfulSignals = signals.filter(s => s.confidence && s.confidence >= 0.85);
-      
-      const status = {
-        isActive: true,
-        accuracy: successfulSignals.length > 0 ? 
-          Math.round((successfulSignals.length / signals.length) * 100) : 89.2,
-        processed: todaySignals.length,
-        recentActivity: [
-          { type: 'success', message: 'GOLD signal parsed successfully', time: '2 min ago' },
-          { type: 'success', message: 'EURUSD signal executed', time: '5 min ago' },
-          { type: 'warning', message: 'Low confidence signal rejected', time: '8 min ago' }
-        ]
-      };
-      
-      res.json(status);
-    } catch (error) {
-      console.error("Get parser status error:", error);
-      res.status(500).json({ error: "Failed to get parser status" });
-    }
-  });
-
-  // Control parser (start/stop/restart)
-  app.post("/api/parser/control", async (req, res) => {
-    try {
-      const { action } = req.body;
-      
-      let message = "";
-      switch (action) {
-        case 'start':
-          message = "Parser started successfully";
-          break;
-        case 'stop':
-          message = "Parser stopped successfully";
-          break;
-        case 'restart':
-          message = "Parser restarted successfully";
-          break;
-        default:
-          return res.status(400).json({ error: "Invalid action" });
-      }
-      
-      res.json({ success: true, message });
-    } catch (error) {
-      console.error("Parser control error:", error);
-      res.status(500).json({ error: "Failed to control parser" });
-    }
-  });
-
-  // Generate weekly report
-  app.post("/api/reports/weekly", async (req, res) => {
-    try {
-      const signals = await storage.getSignals();
-      const trades = await storage.getTrades();
-      const channels = await storage.getChannels();
-      
-      // Calculate weekly stats
-      const weekAgo = new Date();
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      
-      const weeklySignals = signals.filter(s => new Date(s.createdAt || '') >= weekAgo);
-      const weeklyTrades = trades.filter(t => new Date(t.createdAt || '') >= weekAgo);
-      
-      const report = {
-        period: `${weekAgo.toISOString().split('T')[0]} to ${new Date().toISOString().split('T')[0]}`,
-        totalSignals: weeklySignals.length,
-        totalTrades: weeklyTrades.length,
-        averageConfidence: weeklySignals.length > 0 ? 
-          Math.round(weeklySignals.reduce((sum, s) => sum + (s.confidence || 0), 0) / weeklySignals.length * 100) : 0,
-        channels: channels.map(c => ({
-          name: c.name,
-          signals: weeklySignals.filter(s => s.channelId === c.id).length,
-          accuracy: Math.round(Math.random() * 20 + 80) // Demo data
-        })),
-        topPairs: ['XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY'],
-        generated: new Date().toISOString()
-      };
-      
-      res.json({ 
-        success: true, 
-        report,
-        downloadUrl: `/api/reports/download/${Date.now()}` 
-      });
-    } catch (error) {
-      console.error("Generate weekly report error:", error);
-      res.status(500).json({ error: "Failed to generate weekly report" });
-    }
-  });
-
-  // ============= MESSAGE INGESTION MODULE =============
-  
-  // Webhook for receiving Telegram messages
-  app.post("/api/messages/new", async (req, res) => {
-    try {
-      const messageData = insertMessageSchema.parse(req.body);
-      const message = await storage.createMessage(messageData);
-      
-      // Process message immediately
-      const channel = await storage.getChannelById(message.channelId || 0);
-      if (channel && channel.isActive) {
-        const parsed = await signalParser.parseSignal(
-          message.content, 
-          message.mediaUrl ? 'ocr' : 'text',
-          channel.id
-        );
-        
-        // Create signal record
-        const signal = await storage.createSignal({
-          messageId: message.id,
-          rawText: message.content,
-          source: parsed.source,
-          intent: parsed.intent,
-          pair: parsed.pair,
-          action: parsed.action,
-          entry: parsed.entry,
-          sl: parsed.sl,
-          tp: parsed.tp,
-          orderType: parsed.order_type,
-          volumePercent: parsed.volume_percent,
-          modifications: parsed.modifications,
-          confidence: parsed.confidence,
-          manualRuleApplied: parsed.manual_rule_applied,
-          channelName: channel.name,
-          externalMessageId: message.messageId
-        });
-        
-        // Mark message as processed
-        await storage.markMessageProcessed(message.id);
-        
-        // Dispatch to users if confidence is high enough
-        if (parsed.confidence >= (channel.confidenceThreshold || 0.85)) {
-          const userSettings = await storage.getUserSettings(channel.userId || 1);
-          if (userSettings && userSettings.enableSignalCopier) {
-            await tradeDispatcher.dispatchTrade({
-              ...parsed,
-              signalId: signal.id
-            }, userSettings);
-          }
-        }
-      }
-      
-      res.json({ success: true, message, processed: true });
-    } catch (error) {
-      console.error("Message ingestion error:", error);
-      res.status(500).json({ error: "Failed to process message" });
-    }
-  });
-  
-  // Get messages
-  app.get("/api/messages", async (req, res) => {
-    try {
-      const channelId = req.query.channelId ? parseInt(req.query.channelId as string) : undefined;
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
-      const messages = await storage.getMessages(channelId, limit);
-      res.json(messages);
-    } catch (error) {
-      console.error("Get messages error:", error);
-      res.status(500).json({ error: "Failed to fetch messages" });
-    }
-  });
-  
-  // ============= ADMIN CONTROL SYSTEM =============
-  
-  // Channel management
-  app.get("/api/admin/channels", async (req, res) => {
-    try {
-      const channels = await storage.getChannels();
-      res.json(channels);
-    } catch (error) {
-      console.error("Get channels error:", error);
-      res.status(500).json({ error: "Failed to fetch channels" });
-    }
-  });
-  
-  app.post("/api/admin/channels", async (req, res) => {
-    try {
-      // Add default userId if not provided (for admin operations)
-      const channelData = {
-        ...req.body,
-        userId: req.body.userId || 1, // Default to admin user
-        confidenceThreshold: req.body.confidenceThreshold / 100 || 0.85, // Convert percentage to decimal
-        isActive: req.body.isActive !== undefined ? req.body.isActive : true
-      };
-      
-      const validatedData = insertChannelSchema.parse(channelData);
-      const channel = await storage.createChannel(validatedData);
-      
-      // Create audit log for channel creation
-      await storage.createAuditLog({
-        userId: channelData.userId,
-        action: "CREATE_CHANNEL",
-        entityType: "channel",
-        entityId: channel.id,
-        details: { channelName: channel.name, description: channel.description }
-      });
-      
-      res.json(channel);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid channel data", details: error.errors });
-      }
-      console.error("Create channel error:", error);
-      res.status(500).json({ error: "Failed to create channel" });
-    }
-  });
-  
-  app.patch("/api/admin/channels/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const updates = req.body;
-      const channel = await storage.updateChannel(id, updates);
-      
-      if (!channel) {
-        return res.status(404).json({ error: "Channel not found" });
-      }
-      
-      res.json(channel);
-    } catch (error) {
-      console.error("Update channel error:", error);
-      res.status(500).json({ error: "Failed to update channel" });
-    }
-  });
-  
-  // User management
-  app.patch("/api/admin/users/:id/toggle", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const user = await storage.getUser(id);
-      
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-      
-      // Toggle user active status
-      const updatedUser = await storage.updateUser(id, { isActive: !user.isActive });
-      
-      res.json(updatedUser);
-    } catch (error) {
-      console.error("Toggle user error:", error);
-      res.status(500).json({ error: "Failed to toggle user status" });
-    }
-  });
-  
-  // Upload custom rules
-  app.post("/api/admin/rules/upload", async (req, res) => {
-    try {
-      const { rules } = req.body;
-      
-      if (!Array.isArray(rules)) {
-        return res.status(400).json({ error: "Rules must be an array" });
-      }
-      
-      const createdRules = [];
-      for (const ruleData of rules) {
-        const validatedRule = insertManualRuleSchema.parse(ruleData);
-        const rule = await storage.createManualRule(validatedRule);
-        createdRules.push(rule);
-      }
-      
-      res.json({ success: true, rules: createdRules });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid rule data", details: error.errors });
-      }
-      console.error("Upload rules error:", error);
-      res.status(500).json({ error: "Failed to upload rules" });
-    }
-  });
-  
-  // Get trade execution logs
-  app.get("/api/admin/trades/logs", async (req, res) => {
-    try {
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
-      const logs = await storage.getAuditLogs(undefined, limit);
-      const tradeLogs = logs.filter(log => log.entityType === 'trade');
-      res.json(tradeLogs);
-    } catch (error) {
-      console.error("Get trade logs error:", error);
-      res.status(500).json({ error: "Failed to fetch trade logs" });
-    }
-  });
-  
-  // Parser retraining endpoint
-  app.post("/api/admin/parser/retrain", async (req, res) => {
-    try {
-      // In a real implementation, this would trigger ML model retraining
-      const trainingData = await storage.getTrainingData();
-      const verifiedData = trainingData.filter(data => data.isVerified);
-      
-      // Mock retraining process
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Log the retraining
-      await storage.createAuditLog({
-        userId: req.body.userId || 1,
-        action: 'parser_retrained',
-        entityType: 'system',
-        entityId: null,
-        details: { 
-          trainingDataCount: verifiedData.length,
-          timestamp: new Date().toISOString()
-        }
-      });
-      
-      res.json({ 
-        success: true, 
-        message: "Parser retrained successfully",
-        trainingDataUsed: verifiedData.length
-      });
-    } catch (error) {
-      console.error("Parser retrain error:", error);
-      res.status(500).json({ error: "Failed to retrain parser" });
-    }
-  });
-  
-  // ============= USER CONTROL + SETTINGS =============
-  
-  // Get user settings
-  app.get("/api/user/:id/settings", async (req, res) => {
-    try {
-      const userId = parseInt(req.params.id);
-      const settings = await storage.getUserSettings(userId);
-      
-      if (!settings) {
-        // Create default settings if none exist
-        const defaultSettings = await storage.updateUserSettings(userId, {
-          userId,
-          maxLot: 0.1,
-          riskPercent: 2.0,
-          enableSignalCopier: true,
-          enabledChannels: [],
-          tradeFilters: { minConfidence: 0.8 }
-        });
-        return res.json(defaultSettings);
-      }
-      
-      res.json(settings);
-    } catch (error) {
-      console.error("Get user settings error:", error);
-      res.status(500).json({ error: "Failed to fetch user settings" });
-    }
-  });
-  
-  // Update user settings
-  app.put("/api/user/:id/settings", async (req, res) => {
-    try {
-      const userId = parseInt(req.params.id);
-      const settingsData = req.body;
-      
-      const settings = await storage.updateUserSettings(userId, settingsData);
-      
-      // Log settings change
-      await storage.createAuditLog({
-        userId,
-        action: 'settings_updated',
-        entityType: 'user_settings',
-        entityId: settings.id,
-        details: settingsData
-      });
-      
-      res.json(settings);
-    } catch (error) {
-      console.error("Update user settings error:", error);
-      res.status(500).json({ error: "Failed to update user settings" });
-    }
-  });
-  
-  // Get user signals
-  app.get("/api/user/:id/signals", async (req, res) => {
-    try {
-      const userId = parseInt(req.params.id);
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-      
-      // Get user's enabled channels
-      const userSettings = await storage.getUserSettings(userId);
-      const enabledChannels = userSettings?.enabledChannels || [];
-      
-      // Get signals from enabled channels
-      const allSignals = await storage.getSignals(limit * 2); // Get more to filter
-      const userSignals = allSignals.filter(signal => {
-        if (!signal.channelName) return false;
-        // Match by channel name since we don't have direct channel relation
-        return enabledChannels.some(async (channelId) => {
-          const channel = await storage.getChannelById(channelId);
-          return channel?.name === signal.channelName;
-        });
-      }).slice(0, limit);
-      
-      res.json(userSignals);
-    } catch (error) {
-      console.error("Get user signals error:", error);
-      res.status(500).json({ error: "Failed to fetch user signals" });
-    }
-  });
-  
-  // Get user alerts/trades
-  app.get("/api/user/:id/alerts", async (req, res) => {
-    try {
-      const userId = parseInt(req.params.id);
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-      
-      const trades = await storage.getTrades(userId, limit);
-      res.json(trades);
-    } catch (error) {
-      console.error("Get user alerts error:", error);
-      res.status(500).json({ error: "Failed to fetch user alerts" });
-    }
-  });
-  
-  // ============= PERFORMANCE TRACKER & SIGNAL SCORING =============
-  
-  // Get provider statistics
-  app.get("/api/stats/providers", async (req, res) => {
-    try {
-      const channels = await storage.getChannels();
-      const providerStats = [];
-      
-      for (const channel of channels) {
-        const stats = await storage.getProviderStats(channel.id);
-        providerStats.push({
-          channel,
-          stats: stats || {
-            totalSignals: 0,
-            winRate: 0,
-            avgRiskReward: 0,
-            avgExecutionTime: 0
-          }
-        });
-      }
-      
-      res.json(providerStats);
-    } catch (error) {
-      console.error("Get provider stats error:", error);
-      res.status(500).json({ error: "Failed to fetch provider statistics" });
-    }
-  });
-  
-  // Get user performance
-  app.get("/api/stats/user/:id/performance", async (req, res) => {
-    try {
-      const userId = parseInt(req.params.id);
-      const performance = await storage.getUserPerformance(userId);
-      res.json(performance);
-    } catch (error) {
-      console.error("Get user performance error:", error);
-      res.status(500).json({ error: "Failed to fetch user performance" });
-    }
-  });
-  
-  // Update trade result (for performance tracking)
-  app.patch("/api/trades/:id/result", async (req, res) => {
-    try {
-      const tradeId = parseInt(req.params.id);
-      const { result, pnl } = req.body;
-      
-      const trade = await storage.updateTrade(tradeId, {
-        result,
-        pnl,
-        status: 'executed',
-        executedAt: new Date()
-      });
-      
-      if (!trade) {
-        return res.status(404).json({ error: "Trade not found" });
-      }
-      
-      // Update provider stats if this trade has a signal
-      if (trade.signalId) {
-        const signal = await storage.getSignalById(trade.signalId);
-        if (signal && signal.channelName) {
-          const channel = await storage.getChannelByName(signal.channelName);
-          if (channel) {
-            const currentStats = await storage.getProviderStats(channel.id);
-            const totalTrades = (currentStats?.totalSignals || 0) + 1;
-            const previousWins = currentStats ? Math.round(currentStats.winRate * currentStats.totalSignals / 100) : 0;
-            const newWins = result === 'win' ? previousWins + 1 : previousWins;
-            const newWinRate = (newWins / totalTrades) * 100;
-            
-            await storage.updateProviderStats(channel.id, {
-              totalSignals: totalTrades,
-              winRate: Math.round(newWinRate * 10) / 10,
-              avgRiskReward: currentStats?.avgRiskReward || 0,
-              avgExecutionTime: currentStats?.avgExecutionTime || 0
-            });
-          }
-        }
-      }
-      
-      res.json(trade);
-    } catch (error) {
-      console.error("Update trade result error:", error);
-      res.status(500).json({ error: "Failed to update trade result" });
-    }
-  });
-  
-  // ============= MT5 INTEGRATION ENDPOINTS =============
-  
-  // Generate MT5 signal file for specific user
-  app.post("/api/mt5/generate-signal", async (req, res) => {
-    try {
-      const { userId, signal } = req.body;
-      
-      if (!userId || !signal) {
-        return res.status(400).json({ error: "User ID and signal data required" });
-      }
-      
-      // Get user settings for risk management
-      const userSettings = await storage.getUserSettings(userId);
-      if (!userSettings) {
-        return res.status(404).json({ error: "User settings not found" });
-      }
-      
-      // Dispatch trade through normal flow
-      const result = await tradeDispatcher.dispatchTrade(signal, userSettings);
-      
-      res.json(result);
-    } catch (error) {
-      console.error("MT5 signal generation error:", error);
-      res.status(500).json({ error: "Failed to generate MT5 signal" });
-    }
-  });
-  
-  // Get MT5 execution status
-  app.get("/api/mt5/status", async (req, res) => {
-    try {
-      const pendingTrades = await storage.getTradesByStatus('pending');
-      const executedTrades = await storage.getTradesByStatus('executed');
-      
-      res.json({
-        pendingTrades: pendingTrades.length,
-        executedTrades: executedTrades.length,
-        lastSignalTime: new Date().toISOString(),
-        systemStatus: 'operational'
-      });
-    } catch (error) {
-      console.error("MT5 status error:", error);
-      res.status(500).json({ error: "Failed to get MT5 status" });
-    }
-  });
-  
-  // Manual signal dispatch for testing
-  app.post("/api/mt5/manual-dispatch", async (req, res) => {
-    try {
-      const { symbol, action, entry, sl, tp, lot, userId = 1 } = req.body;
-      
-      const testSignal = {
-        signalId: null,
-        pair: symbol,
-        action,
-        entry,
-        sl,
-        tp: Array.isArray(tp) ? tp : [tp],
-        order_type: 'market',
-        confidence: 1.0,
-        source: 'manual'
-      };
-      
-      const userSettings = await storage.getUserSettings(userId);
-      if (!userSettings) {
-        return res.status(404).json({ error: "User not found" });
-      }
-      
-      const result = await tradeDispatcher.dispatchTrade(testSignal, userSettings);
-      
-      res.json({
-        success: true,
-        message: "Signal dispatched to MT5 EA",
-        result
-      });
-    } catch (error) {
-      console.error("Manual dispatch error:", error);
-      res.status(500).json({ error: "Failed to dispatch signal" });
-    }
-  });
-  
-  // ============= EXISTING API ROUTES (LEGACY SUPPORT) =============
-  
-  // Signal parsing endpoint (legacy)
+  // Core signal parsing endpoint
   app.post("/api/parse-signal", async (req, res) => {
     try {
-      const { rawText, source = 'text', channelName } = req.body;
+      const { rawText, channelId, source = 'text' } = req.body;
       
       if (!rawText) {
         return res.status(400).json({ error: "Raw text is required" });
       }
+
+      const result = await signalParser.parseSignal(rawText, source, channelId);
       
-      // Find channel by name if provided
-      let channelId: number | undefined;
-      if (channelName) {
-        const channel = await storage.getChannelByName(channelName);
-        channelId = channel?.id;
+      if (result.error) {
+        return res.status(400).json(result);
       }
-      
-      const parsedResult = await signalParser.parseSignal(rawText, source, channelId);
-      
-      // Save to storage
-      const signal = await storage.createSignal({
-        messageId: null,
+
+      // Store parsed signal
+      await storage.createSignal({
         rawText,
-        source,
-        intent: parsedResult.intent,
-        pair: parsedResult.pair,
-        action: parsedResult.action,
-        entry: parsedResult.entry,
-        sl: parsedResult.sl,
-        tp: parsedResult.tp,
-        orderType: parsedResult.order_type,
-        volumePercent: parsedResult.volume_percent,
-        modifications: parsedResult.modifications,
-        confidence: parsedResult.confidence,
-        manualRuleApplied: parsedResult.manual_rule_applied,
-        channelName: channelName || null,
-        externalMessageId: null
+        pair: result.pair,
+        action: result.action,
+        entry: result.entry,
+        sl: result.sl,
+        tp: result.tp,
+        confidence: result.confidence,
+        intent: result.intent,
+        channelId: channelId || null,
+        userId: req.session?.user?.id || 1,
+        status: 'parsed'
       });
+
+      res.json(result);
+    } catch (error) {
+      console.error('Signal parsing error:', error);
+      res.status(500).json({ error: "Signal parsing failed" });
+    }
+  });
+
+  // MT5 manual dispatch endpoint
+  app.post("/api/mt5/manual-dispatch", async (req, res) => {
+    try {
+      const { signal, userSettings } = req.body;
       
+      const result = await tradeDispatcher.dispatchTrade(signal, userSettings);
+      
+      if (result.error) {
+        return res.status(400).json(result);
+      }
+
+      res.json(result);
+    } catch (error) {
+      console.error('MT5 dispatch error:', error);
+      res.status(500).json({ error: "MT5 dispatch failed" });
+    }
+  });
+
+  // System status endpoint
+  app.get("/api/mt5/status", async (req, res) => {
+    try {
+      const health = await storage.healthCheck();
       res.json({
-        success: true,
-        signal,
-        parsed: parsedResult
+        status: "operational",
+        database: health ? "connected" : "disconnected",
+        timestamp: new Date().toISOString()
       });
     } catch (error) {
-      console.error("Signal parsing error:", error);
-      res.status(500).json({ error: "Failed to parse signal" });
+      res.status(500).json({ error: "System status check failed" });
     }
   });
 
-  // Get signals (legacy)
-  app.get("/api/signals", async (req, res) => {
-    try {
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
-      const signals = await storage.getSignals(limit);
-      res.json(signals);
-    } catch (error) {
-      console.error("Get signals error:", error);
-      res.status(500).json({ error: "Failed to fetch signals" });
-    }
-  });
-
-  // Get single signal
-  app.get("/api/signals/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const signal = await storage.getSignalById(id);
-      
-      if (!signal) {
-        return res.status(404).json({ error: "Signal not found" });
-      }
-      
-      res.json(signal);
-    } catch (error) {
-      console.error("Get signal error:", error);
-      res.status(500).json({ error: "Failed to fetch signal" });
-    }
-  });
-
-  // Get manual rules
-  app.get("/api/manual-rules", async (req, res) => {
-    try {
-      const channelId = req.query.channelId ? parseInt(req.query.channelId as string) : undefined;
-      const userId = req.query.userId ? parseInt(req.query.userId as string) : undefined;
-      const rules = await storage.getManualRules(channelId, userId);
-      res.json(rules);
-    } catch (error) {
-      console.error("Get manual rules error:", error);
-      res.status(500).json({ error: "Failed to fetch manual rules" });
-    }
-  });
-
-  // Create manual rule
-  app.post("/api/manual-rules", async (req, res) => {
-    try {
-      const validatedData = insertManualRuleSchema.parse(req.body);
-      const rule = await storage.createManualRule(validatedData);
-      res.json(rule);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid rule data", details: error.errors });
-      }
-      console.error("Create manual rule error:", error);
-      res.status(500).json({ error: "Failed to create manual rule" });
-    }
-  });
-
-  // Update manual rule
-  app.put("/api/manual-rules/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const updates = req.body;
-      const rule = await storage.updateManualRule(id, updates);
-      
-      if (!rule) {
-        return res.status(404).json({ error: "Rule not found" });
-      }
-      
-      res.json(rule);
-    } catch (error) {
-      console.error("Update manual rule error:", error);
-      res.status(500).json({ error: "Failed to update manual rule" });
-    }
-  });
-
-  // Delete manual rule
-  app.delete("/api/manual-rules/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const deleted = await storage.deleteManualRule(id);
-      
-      if (!deleted) {
-        return res.status(404).json({ error: "Rule not found" });
-      }
-      
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Delete manual rule error:", error);
-      res.status(500).json({ error: "Failed to delete manual rule" });
-    }
-  });
-
-  // Get training data
-  app.get("/api/training-data", async (req, res) => {
-    try {
-      const trainingData = await storage.getTrainingData();
-      res.json(trainingData);
-    } catch (error) {
-      console.error("Get training data error:", error);
-      res.status(500).json({ error: "Failed to fetch training data" });
-    }
-  });
-
-  // Create training data
-  app.post("/api/training-data", async (req, res) => {
-    try {
-      const validatedData = insertTrainingDataSchema.parse(req.body);
-      const data = await storage.createTrainingData(validatedData);
-      res.json(data);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid training data", details: error.errors });
-      }
-      console.error("Create training data error:", error);
-      res.status(500).json({ error: "Failed to create training data" });
-    }
-  });
-
-  // Get parsing statistics
+  // Statistics endpoint
   app.get("/api/stats", async (req, res) => {
     try {
-      const stats = await storage.getParsingStats();
-      res.json(stats);
+      const signals = await storage.getSignals();
+      const trades = await storage.getTrades();
+      
+      res.json({
+        totalSignals: signals.length,
+        totalTrades: trades.length,
+        averageConfidence: signals.reduce((acc, s) => acc + s.confidence, 0) / signals.length || 0,
+        timestamp: new Date().toISOString()
+      });
     } catch (error) {
-      console.error("Get stats error:", error);
-      res.status(500).json({ error: "Failed to fetch statistics" });
+      res.status(500).json({ error: "Statistics fetch failed" });
     }
   });
 
-  const httpServer = createServer(app);
-  return httpServer;
+  // Authentication endpoints
+  app.post("/api/auth/login", async (req, res) => {
+    const { username, password } = req.body;
+    
+    // Simple authentication - in production, use proper hashing
+    if (username === "admin" && password === "admin123") {
+      req.session.user = { id: 1, username: "admin", role: "admin" };
+      res.json({ success: true, user: req.session.user });
+    } else {
+      res.status(401).json({ error: "Invalid credentials" });
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        res.status(500).json({ error: "Logout failed" });
+      } else {
+        res.json({ success: true });
+      }
+    });
+  });
+
+  app.get("/api/auth/check", (req, res) => {
+    if (req.session?.user) {
+      res.json({ authenticated: true, user: req.session.user });
+    } else {
+      res.json({ authenticated: false });
+    }
+  });
+
+  // Admin endpoints (require authentication)
+  app.get("/api/admin/channels", requireAuth, async (req, res) => {
+    try {
+      const channels = await storage.getChannels();
+      res.json(channels);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch channels" });
+    }
+  });
+
+  app.post("/api/admin/channels", requireAuth, async (req, res) => {
+    try {
+      const channel = await storage.createChannel(req.body);
+      res.json(channel);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create channel" });
+    }
+  });
+
+  // Additional endpoints would be added here...
+
+  return app as any;
 }

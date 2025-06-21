@@ -1,13 +1,10 @@
-import { 
-  users, channels, messages, signals, trades, manualRules, trainingData,
-  userSettings, auditLogs, providerStats,
-  type User, type InsertUser, type Channel, type InsertChannel, type Message, type InsertMessage,
-  type Signal, type InsertSignal, type Trade, type InsertTrade, type ManualRule, type InsertManualRule,
-  type TrainingData, type InsertTrainingData, type UserSettings, type InsertUserSettings,
-  type AuditLog, type InsertAuditLog, type ProviderStats, type InsertProviderStats
-} from "@shared/schema";
+import {
+  User, InsertUser, Signal, InsertSignal, Channel, InsertChannel, 
+  Message, InsertMessage, Trade, InsertTrade, ManualRule, InsertManualRule,
+  TrainingData, InsertTrainingData, UserSettings, InsertUserSettings,
+  AuditLog, InsertAuditLog, ProviderStats, InsertProviderStats
+} from "../shared/schema.js";
 
-// Fallback in-memory storage with proper types to fix infinite loops
 export class FallbackStorage {
   private users = new Map<number, User>();
   private channels = new Map<number, Channel>();
@@ -38,85 +35,102 @@ export class FallbackStorage {
   private seedDatabase() {
     // Create admin user
     const adminUser: User = {
-      id: this.currentUserId++,
-      username: 'admin',
-      password: 'admin123',
-      apiKey: null,
+      id: 1,
+      username: "admin",
+      email: "admin@tradingsignals.com",
+      role: "admin",
       isActive: true,
-      isAdmin: true,
-      createdAt: new Date()
+      lastLogin: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
-    this.users.set(adminUser.id, adminUser);
+    this.users.set(1, adminUser);
 
-    // Create channels
+    // Create sample channels
     const goldChannel: Channel = {
-      id: this.currentChannelId++,
-      name: '@XAUUSDChannel',
-      description: 'Gold trading signals',
+      id: 1,
+      name: "Gold Signals VIP",
+      telegramId: "123456789",
       isActive: true,
-      confidenceThreshold: 0.85,
-      userId: adminUser.id,
-      createdAt: new Date()
+      description: "Premium gold trading signals",
+      subscriberCount: 1250,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
-    this.channels.set(goldChannel.id, goldChannel);
 
     const forexChannel: Channel = {
-      id: this.currentChannelId++,
-      name: '@ForexPro',
-      description: 'Forex signals',
+      id: 2,
+      name: "Forex Master Signals",
+      telegramId: "987654321",
       isActive: true,
-      confidenceThreshold: 0.80,
-      userId: adminUser.id,
-      createdAt: new Date()
+      description: "Professional forex signals",
+      subscriberCount: 890,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
-    this.channels.set(forexChannel.id, forexChannel);
 
-    // Create user settings - Fixed to prevent infinite loops
+    this.channels.set(1, goldChannel);
+    this.channels.set(2, forexChannel);
+
+    // Create user settings
     const settings: UserSettings = {
-      id: this.currentUserSettingsId++,
-      userId: adminUser.id,
-      maxLot: 0.2,
+      id: 1,
+      userId: 1,
+      maxLot: 0.1,
       riskPercent: 2.0,
       enableSignalCopier: true,
-      enabledChannels: [goldChannel.id, forexChannel.id],
-      tradeFilters: { minConfidence: 0.8 },
+      enabledChannels: [1, 2],
+      tradeFilters: {},
       executionMode: "auto",
       minConfidence: 0.85,
       timezone: "UTC",
       maxDailyTrades: 10,
       maxDrawdown: 10.0,
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
     };
-    this.userSettings.set(adminUser.id, settings); // Key by userId, not id
+    this.userSettings.set(1, settings);
 
-    // Create manual rules
+    // Create sample manual rules
     const rule1: ManualRule = {
-      id: this.currentManualRuleId++,
-      pattern: 'SL to BE',
-      action: 'Set stop loss to breakeven',
+      id: 1,
+      channelId: 1,
+      name: "Gold Buy Pattern",
+      pattern: "GOLD.*BUY.*@([0-9]+)",
+      priority: 1,
       isActive: true,
-      userId: adminUser.id,
-      channelId: goldChannel.id,
+      defaultPair: "XAUUSD",
+      defaultAction: "buy",
+      defaultEntry: null,
+      defaultSl: null,
+      defaultTp: null,
       usageCount: 0,
-      createdAt: new Date()
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
-    this.manualRules.set(rule1.id, rule1);
 
     const rule2: ManualRule = {
-      id: this.currentManualRuleId++,
-      pattern: 'Close 50%',
-      action: 'Close 50% of position',
+      id: 2,
+      channelId: 2,
+      name: "EUR/USD Sell Pattern",
+      pattern: "EURUSD.*SELL.*([0-9.]+)",
+      priority: 2,
       isActive: true,
-      userId: adminUser.id,
-      channelId: forexChannel.id,
+      defaultPair: "EURUSD",
+      defaultAction: "sell",
+      defaultEntry: null,
+      defaultSl: null,
+      defaultTp: null,
       usageCount: 0,
-      createdAt: new Date()
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
-    this.manualRules.set(rule2.id, rule2);
+
+    this.manualRules.set(1, rule1);
+    this.manualRules.set(2, rule2);
   }
 
-  // Users
+  // User operations
   async getUsers(): Promise<User[]> {
     return Array.from(this.users.values());
   }
@@ -128,34 +142,31 @@ export class FallbackStorage {
   async createUser(user: InsertUser): Promise<User> {
     const newUser: User = {
       id: this.currentUserId++,
-      username: user.username,
-      password: user.password,
-      apiKey: null,
-      isActive: true,
-      isAdmin: false,
-      createdAt: new Date()
+      ...user,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
     this.users.set(newUser.id, newUser);
     return newUser;
   }
 
   async updateUser(id: number, user: Partial<InsertUser>): Promise<User | null> {
-    const existing = this.users.get(id);
-    if (!existing) return null;
-    
-    const updated = { ...existing, ...user };
-    this.users.set(id, updated);
-    return updated;
+    const existingUser = this.users.get(id);
+    if (!existingUser) return null;
+
+    const updatedUser = { ...existingUser, ...user, updatedAt: new Date() };
+    this.users.set(id, updatedUser);
+    return updatedUser;
   }
 
   async deleteUser(id: number): Promise<boolean> {
     return this.users.delete(id);
   }
 
-  // Signals
+  // Signal operations
   async getSignals(): Promise<Signal[]> {
     return Array.from(this.signals.values()).sort((a, b) => 
-      new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   }
 
@@ -166,46 +177,21 @@ export class FallbackStorage {
   async createSignal(signal: InsertSignal): Promise<Signal> {
     const newSignal: Signal = {
       id: this.currentSignalId++,
-      signalId: signal.signalId,
-      signalHash: signal.signalHash,
-      rawText: signal.rawText,
-      source: signal.source,
-      intent: signal.intent,
-      confidence: signal.confidence,
-      pair: signal.pair || null,
-      action: signal.action || null,
-      entry: signal.entry || null,
-      sl: signal.sl || null,
-      tp: signal.tp || null,
-      orderType: signal.orderType || null,
-      volumePercent: signal.volumePercent || null,
-      modifications: signal.modifications || null,
-      status: "pending",
-      isVerified: false,
-      retryCount: 0,
-      manualRuleApplied: signal.manualRuleApplied || null,
-      channelName: signal.channelName || null,
-      externalMessageId: signal.externalMessageId || null,
+      ...signal,
       createdAt: new Date(),
-      processedAt: null,
-      userId: signal.userId || null,
-      messageId: signal.messageId || null,
-      channelId: signal.channelId || null,
-      imagePath: signal.imagePath || null,
-      imageCaption: signal.imageCaption || null,
-      errorMessage: signal.errorMessage || null
+      updatedAt: new Date(),
     };
     this.signals.set(newSignal.id, newSignal);
     return newSignal;
   }
 
   async updateSignal(id: number, signal: Partial<InsertSignal>): Promise<Signal | null> {
-    const existing = this.signals.get(id);
-    if (!existing) return null;
-    
-    const updated = { ...existing, ...signal };
-    this.signals.set(id, updated);
-    return updated;
+    const existingSignal = this.signals.get(id);
+    if (!existingSignal) return null;
+
+    const updatedSignal = { ...existingSignal, ...signal, updatedAt: new Date() };
+    this.signals.set(id, updatedSignal);
+    return updatedSignal;
   }
 
   async deleteSignal(id: number): Promise<boolean> {
@@ -213,25 +199,22 @@ export class FallbackStorage {
   }
 
   async getSignalsByUser(userId: number): Promise<Signal[]> {
-    return Array.from(this.signals.values())
-      .filter(signal => signal.userId === userId)
-      .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
+    return Array.from(this.signals.values()).filter(s => s.userId === userId);
   }
 
   async getSignalsByDateRange(startDate: Date, endDate: Date): Promise<Signal[]> {
-    return Array.from(this.signals.values()).filter(signal => {
-      const createdAt = new Date(signal.createdAt!);
-      return createdAt >= startDate && createdAt <= endDate;
-    });
+    return Array.from(this.signals.values()).filter(s => 
+      s.createdAt >= startDate && s.createdAt <= endDate
+    );
   }
 
   async getSignalsByChannel(channelId: number): Promise<Signal[]> {
-    return Array.from(this.signals.values()).filter(signal => signal.channelId === channelId);
+    return Array.from(this.signals.values()).filter(s => s.channelId === channelId);
   }
 
-  // Channels
+  // Channel operations
   async getChannels(): Promise<Channel[]> {
-    return Array.from(this.channels.values()).sort((a, b) => a.name.localeCompare(b.name));
+    return Array.from(this.channels.values());
   }
 
   async getChannelById(id: number): Promise<Channel | null> {
@@ -242,28 +225,31 @@ export class FallbackStorage {
     const newChannel: Channel = {
       id: this.currentChannelId++,
       ...channel,
-      createdAt: new Date()
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
     this.channels.set(newChannel.id, newChannel);
     return newChannel;
   }
 
   async updateChannel(id: number, channel: Partial<InsertChannel>): Promise<Channel | null> {
-    const existing = this.channels.get(id);
-    if (!existing) return null;
-    
-    const updated = { ...existing, ...channel };
-    this.channels.set(id, updated);
-    return updated;
+    const existingChannel = this.channels.get(id);
+    if (!existingChannel) return null;
+
+    const updatedChannel = { ...existingChannel, ...channel, updatedAt: new Date() };
+    this.channels.set(id, updatedChannel);
+    return updatedChannel;
   }
 
   async deleteChannel(id: number): Promise<boolean> {
     return this.channels.delete(id);
   }
 
-  // Messages
+  // Message operations
   async getMessages(): Promise<Message[]> {
-    return Array.from(this.messages.values());
+    return Array.from(this.messages.values()).sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
   }
 
   async getMessageById(id: number): Promise<Message | null> {
@@ -275,19 +261,19 @@ export class FallbackStorage {
       id: this.currentMessageId++,
       ...message,
       createdAt: new Date(),
-      processedAt: message.processedAt || null
+      updatedAt: new Date(),
     };
     this.messages.set(newMessage.id, newMessage);
     return newMessage;
   }
 
   async updateMessage(id: number, message: Partial<InsertMessage>): Promise<Message | null> {
-    const existing = this.messages.get(id);
-    if (!existing) return null;
-    
-    const updated = { ...existing, ...message };
-    this.messages.set(id, updated);
-    return updated;
+    const existingMessage = this.messages.get(id);
+    if (!existingMessage) return null;
+
+    const updatedMessage = { ...existingMessage, ...message, updatedAt: new Date() };
+    this.messages.set(id, updatedMessage);
+    return updatedMessage;
   }
 
   async deleteMessage(id: number): Promise<boolean> {
@@ -295,12 +281,14 @@ export class FallbackStorage {
   }
 
   async getMessagesByChannel(channelId: number): Promise<Message[]> {
-    return Array.from(this.messages.values()).filter(msg => msg.channelId === channelId);
+    return Array.from(this.messages.values()).filter(m => m.channelId === channelId);
   }
 
-  // Trades
+  // Trade operations
   async getTrades(): Promise<Trade[]> {
-    return Array.from(this.trades.values());
+    return Array.from(this.trades.values()).sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
   }
 
   async getTradeById(id: number): Promise<Trade | null> {
@@ -310,23 +298,21 @@ export class FallbackStorage {
   async createTrade(trade: InsertTrade): Promise<Trade> {
     const newTrade: Trade = {
       id: this.currentTradeId++,
-      status: "pending",
-      executedAt: null,
-      result: null,
       ...trade,
-      createdAt: new Date()
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
     this.trades.set(newTrade.id, newTrade);
     return newTrade;
   }
 
   async updateTrade(id: number, trade: Partial<InsertTrade>): Promise<Trade | null> {
-    const existing = this.trades.get(id);
-    if (!existing) return null;
-    
-    const updated = { ...existing, ...trade };
-    this.trades.set(id, updated);
-    return updated;
+    const existingTrade = this.trades.get(id);
+    if (!existingTrade) return null;
+
+    const updatedTrade = { ...existingTrade, ...trade, updatedAt: new Date() };
+    this.trades.set(id, updatedTrade);
+    return updatedTrade;
   }
 
   async deleteTrade(id: number): Promise<boolean> {
@@ -334,10 +320,10 @@ export class FallbackStorage {
   }
 
   async getTradesByUser(userId: number): Promise<Trade[]> {
-    return Array.from(this.trades.values()).filter(trade => trade.userId === userId);
+    return Array.from(this.trades.values()).filter(t => t.userId === userId);
   }
 
-  // Manual Rules
+  // Manual Rules operations
   async getManualRules(): Promise<ManualRule[]> {
     return Array.from(this.manualRules.values());
   }
@@ -349,22 +335,21 @@ export class FallbackStorage {
   async createManualRule(rule: InsertManualRule): Promise<ManualRule> {
     const newRule: ManualRule = {
       id: this.currentManualRuleId++,
-      usageCount: 0,
-      isActive: rule.isActive ?? true,
       ...rule,
-      createdAt: new Date()
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
     this.manualRules.set(newRule.id, newRule);
     return newRule;
   }
 
   async updateManualRule(id: number, rule: Partial<InsertManualRule>): Promise<ManualRule | null> {
-    const existing = this.manualRules.get(id);
-    if (!existing) return null;
-    
-    const updated = { ...existing, ...rule };
-    this.manualRules.set(id, updated);
-    return updated;
+    const existingRule = this.manualRules.get(id);
+    if (!existingRule) return null;
+
+    const updatedRule = { ...existingRule, ...rule, updatedAt: new Date() };
+    this.manualRules.set(id, updatedRule);
+    return updatedRule;
   }
 
   async deleteManualRule(id: number): Promise<boolean> {
@@ -372,10 +357,10 @@ export class FallbackStorage {
   }
 
   async getActiveManualRules(): Promise<ManualRule[]> {
-    return Array.from(this.manualRules.values()).filter(rule => rule.isActive);
+    return Array.from(this.manualRules.values()).filter(r => r.isActive);
   }
 
-  // Training Data
+  // Training Data operations
   async getTrainingData(): Promise<TrainingData[]> {
     return Array.from(this.trainingData.values());
   }
@@ -387,82 +372,69 @@ export class FallbackStorage {
   async createTrainingData(data: InsertTrainingData): Promise<TrainingData> {
     const newData: TrainingData = {
       id: this.currentTrainingDataId++,
-      isVerified: data.isVerified ?? false,
       ...data,
-      createdAt: new Date()
+      createdAt: new Date(),
     };
     this.trainingData.set(newData.id, newData);
     return newData;
   }
 
   async updateTrainingData(id: number, data: Partial<InsertTrainingData>): Promise<TrainingData | null> {
-    const existing = this.trainingData.get(id);
-    if (!existing) return null;
-    
-    const updated = { ...existing, ...data };
-    this.trainingData.set(id, updated);
-    return updated;
+    const existingData = this.trainingData.get(id);
+    if (!existingData) return null;
+
+    const updatedData = { ...existingData, ...data };
+    this.trainingData.set(id, updatedData);
+    return updatedData;
   }
 
   async deleteTrainingData(id: number): Promise<boolean> {
     return this.trainingData.delete(id);
   }
 
-  // User Settings - Fixed to prevent infinite loops
+  // User Settings operations
   async getUserSettings(userId: number): Promise<UserSettings | null> {
-    return this.userSettings.get(userId) || null;
+    return Array.from(this.userSettings.values()).find(s => s.userId === userId) || null;
   }
 
   async updateUserSettings(userId: number, settings: Partial<InsertUserSettings>): Promise<UserSettings | null> {
-    const existing = this.userSettings.get(userId);
-    if (!existing) {
-      // Create new settings if they don't exist
+    const existing = Array.from(this.userSettings.values()).find(s => s.userId === userId);
+    
+    if (existing) {
+      const updated = { ...existing, ...settings, updatedAt: new Date() };
+      this.userSettings.set(existing.id, updated);
+      return updated;
+    } else {
       const newSettings: UserSettings = {
         id: this.currentUserSettingsId++,
         userId,
-        maxLot: 0.2,
-        riskPercent: 2.0,
-        enableSignalCopier: true,
-        enabledChannels: [],
-        tradeFilters: {},
-        executionMode: "auto",
-        minConfidence: 0.85,
-        timezone: "UTC",
-        maxDailyTrades: 10,
-        maxDrawdown: 10.0,
+        ...settings,
         createdAt: new Date(),
         updatedAt: new Date(),
-        ...settings
-      };
-      this.userSettings.set(userId, newSettings);
+      } as UserSettings;
+      this.userSettings.set(newSettings.id, newSettings);
       return newSettings;
     }
-    
-    const updated = { 
-      ...existing, 
-      ...settings, 
-      updatedAt: new Date() 
-    };
-    this.userSettings.set(userId, updated);
-    return updated;
   }
 
-  // Audit Logs
+  // Audit Log operations
   async createAuditLog(log: InsertAuditLog): Promise<AuditLog> {
     const newLog: AuditLog = {
       id: this.currentAuditLogId++,
       ...log,
-      createdAt: new Date()
+      createdAt: new Date(),
     };
     this.auditLogs.set(newLog.id, newLog);
     return newLog;
   }
 
   async getAuditLogs(): Promise<AuditLog[]> {
-    return Array.from(this.auditLogs.values());
+    return Array.from(this.auditLogs.values()).sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
   }
 
-  // Provider Stats
+  // Provider Stats operations
   async getProviderStats(): Promise<ProviderStats[]> {
     return Array.from(this.providerStats.values());
   }
@@ -471,85 +443,79 @@ export class FallbackStorage {
     const existing = Array.from(this.providerStats.values()).find(s => s.channelId === channelId);
     
     if (existing) {
-      const updated = { ...existing, ...stats, lastUpdated: new Date() };
+      const updated = { ...existing, ...stats, updatedAt: new Date() };
       this.providerStats.set(existing.id, updated);
       return updated;
     } else {
       const newStats: ProviderStats = {
         id: this.currentProviderStatsId++,
         channelId,
-        totalSignals: 0,
-        winRate: 0,
-        avgRiskReward: 0,
-        avgExecutionTime: 0,
-        lastUpdated: new Date(),
-        ...stats
-      };
+        ...stats,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as ProviderStats;
       this.providerStats.set(newStats.id, newStats);
       return newStats;
     }
   }
 
+  // Infrastructure methods
   async initialize(): Promise<void> {
-    // Already initialized in constructor
-    console.log('Fallback storage initialized');
+    console.log("Fallback storage initialized with sample data");
   }
 
   async healthCheck(): Promise<boolean> {
     return true;
   }
 
-  // Missing methods for API compatibility
+  // Helper methods
   async incrementRuleUsage(ruleId: number): Promise<void> {
     const rule = this.manualRules.get(ruleId);
     if (rule) {
       rule.usageCount = (rule.usageCount || 0) + 1;
+      this.manualRules.set(ruleId, rule);
     }
   }
 
   async markMessageProcessed(messageId: number): Promise<void> {
     const message = this.messages.get(messageId);
     if (message) {
-      message.processedAt = new Date();
+      message.isProcessed = true;
+      this.messages.set(messageId, message);
     }
   }
 
+  // Additional helper methods for compatibility
   async getUser(id: number): Promise<User | null> {
     return this.getUserById(id);
   }
 
   async getUserPerformance(userId: number): Promise<any> {
-    const userTrades = await this.getTradesByUser(userId);
-    const totalTrades = userTrades.length;
-    const winningTrades = userTrades.filter(t => t.pnl && t.pnl > 0).length;
-    const totalPnl = userTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+    const trades = await this.getTradesByUser(userId);
+    const signals = await this.getSignalsByUser(userId);
     
     return {
-      totalTrades,
-      winRate: totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0,
-      totalPnl,
-      avgPnl: totalTrades > 0 ? totalPnl / totalTrades : 0
+      totalTrades: trades.length,
+      totalSignals: signals.length,
+      winRate: trades.length > 0 ? (trades.filter(t => t.status === 'closed' && t.profit > 0).length / trades.length) * 100 : 0,
+      totalProfit: trades.reduce((sum, t) => sum + (t.profit || 0), 0),
     };
   }
 
   async getTradesByStatus(status: string): Promise<Trade[]> {
-    return Array.from(this.trades.values()).filter(trade => trade.status === status);
+    return Array.from(this.trades.values()).filter(t => t.status === status);
   }
 
   async getChannelByName(name: string): Promise<Channel | null> {
-    return Array.from(this.channels.values()).find(channel => channel.name === name) || null;
+    return Array.from(this.channels.values()).find(c => c.name === name) || null;
   }
 
   async getParsingStats(): Promise<any> {
     const signals = await this.getSignals();
-    const totalSignals = signals.length;
-    const successfulSignals = signals.filter(s => s.confidence && s.confidence > 0.8).length;
-    
     return {
-      totalParsed: totalSignals,
-      successRate: totalSignals > 0 ? (successfulSignals / totalSignals) * 100 : 0,
-      avgConfidence: totalSignals > 0 ? 
-        signals.reduce((sum, s) => sum + (s.confidence || 0), 0) / totalSignals : 0
+      totalParsed: signals.length,
+      averageConfidence: signals.reduce((sum, s) => sum + s.confidence, 0) / signals.length || 0,
+      successRate: signals.filter(s => s.confidence >= 0.85).length / signals.length || 0,
     };
   }
 }

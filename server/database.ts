@@ -1,370 +1,282 @@
-import { neon } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-http';
-import { eq, and, gte, lte, desc, asc } from 'drizzle-orm';
-import {
-  users, channels, messages, signals, trades, manualRules, trainingData,
-  userSettings, auditLogs, providerStats, roles, userRoles, providerPerformance, signalQueue,
-  type User, type InsertUser, type Channel, type InsertChannel, type Message, type InsertMessage,
-  type Signal, type InsertSignal, type Trade, type InsertTrade, type ManualRule, type InsertManualRule,
-  type TrainingData, type InsertTrainingData, type UserSettings, type InsertUserSettings,
-  type AuditLog, type InsertAuditLog, type ProviderStats, type InsertProviderStats
-} from "@shared/schema";
+import { neon } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-http";
+import * as schema from "../shared/schema.js";
+import { 
+  User, InsertUser, Signal, InsertSignal, Channel, InsertChannel, 
+  Message, InsertMessage, Trade, InsertTrade, ManualRule, InsertManualRule,
+  TrainingData, InsertTrainingData, UserSettings, InsertUserSettings,
+  AuditLog, InsertAuditLog, ProviderStats, InsertProviderStats
+} from "../shared/schema.js";
+import { eq, and, gte, lte, desc } from "drizzle-orm";
 
-// Initialize database connection
 const sql = neon(process.env.DATABASE_URL!);
-const db = drizzle(sql);
+const db = drizzle(sql, { schema });
 
 export class DatabaseStorage {
-  // Initialize and seed database
+  private db = db;
+
   async initialize(): Promise<void> {
     try {
-      // Check if admin user exists
-      const existingUser = await db.select().from(users).where(eq(users.id, 1)).limit(1);
-      
-      if (existingUser.length === 0) {
-        // Create admin user
-        await db.insert(users).values({
-          username: 'admin',
-          password: 'admin123', // In production, use proper hashing
-        });
-
-        // Create default channels
-        const goldChannel = await db.insert(channels).values({
-          name: '@XAUUSDChannel',
-          description: 'Gold trading signals',
-          isActive: true,
-        }).returning();
-
-        const forexChannel = await db.insert(channels).values({
-          name: '@ForexPro',
-          description: 'Forex signals',
-          isActive: true,
-        }).returning();
-
-        // Create default user settings
-        await db.insert(userSettings).values({
-          userId: 1,
-          maxLot: 0.2,
-          riskPercent: 2.0,
-          enableSignalCopier: true,
-          enabledChannels: [goldChannel[0].id, forexChannel[0].id],
-          tradeFilters: { minConfidence: 0.8 },
-          executionMode: "auto",
-          minConfidence: 0.85,
-          timezone: "UTC",
-          maxDailyTrades: 10,
-          maxDrawdown: 10.0,
-        });
-
-        // Create default manual rules
-        await db.insert(manualRules).values([
-          {
-            pattern: 'SL to BE',
-            action: 'Set stop loss to breakeven',
-            isActive: true,
-            userId: 1,
-            channelId: goldChannel[0].id,
-            usageCount: 0,
-          },
-          {
-            pattern: 'Close 50%',
-            action: 'Close 50% of position',
-            isActive: true,
-            userId: 1,
-            channelId: forexChannel[0].id,
-            usageCount: 0,
-          }
-        ]);
-
-        console.log('Database initialized with default data');
-      }
+      // Test connection
+      await this.db.select().from(schema.users).limit(1);
+      console.log("Database connection established successfully");
     } catch (error) {
-      console.error('Database initialization failed:', error);
+      console.error("Database initialization failed:", error);
       throw error;
     }
   }
 
-  // Users
+  // User operations
   async getUsers(): Promise<User[]> {
-    return await db.select().from(users);
+    return await this.db.select().from(schema.users);
   }
 
   async getUserById(id: number): Promise<User | null> {
-    const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
-    return result[0] || null;
+    const users = await this.db.select().from(schema.users).where(eq(schema.users.id, id));
+    return users[0] || null;
   }
 
   async createUser(user: InsertUser): Promise<User> {
-    const result = await db.insert(users).values(user).returning();
+    const result = await this.db.insert(schema.users).values(user).returning();
     return result[0];
   }
 
   async updateUser(id: number, user: Partial<InsertUser>): Promise<User | null> {
-    const result = await db.update(users).set(user).where(eq(users.id, id)).returning();
+    const result = await this.db.update(schema.users).set(user).where(eq(schema.users.id, id)).returning();
     return result[0] || null;
   }
 
   async deleteUser(id: number): Promise<boolean> {
-    const result = await db.delete(users).where(eq(users.id, id));
+    const result = await this.db.delete(schema.users).where(eq(schema.users.id, id));
     return result.rowCount > 0;
   }
 
-  // Signals
+  // Signal operations
   async getSignals(): Promise<Signal[]> {
-    return await db.select().from(signals).orderBy(desc(signals.createdAt));
+    return await this.db.select().from(schema.signals).orderBy(desc(schema.signals.createdAt));
   }
 
   async getSignalById(id: number): Promise<Signal | null> {
-    const result = await db.select().from(signals).where(eq(signals.id, id)).limit(1);
-    return result[0] || null;
+    const signals = await this.db.select().from(schema.signals).where(eq(schema.signals.id, id));
+    return signals[0] || null;
   }
 
   async createSignal(signal: InsertSignal): Promise<Signal> {
-    const result = await db.insert(signals).values({
-      ...signal,
-      signalId: signal.signalId || `SIG_${Date.now()}`,
-      signalHash: signal.signalHash || `HASH_${Date.now()}`,
-    }).returning();
+    const result = await this.db.insert(schema.signals).values(signal).returning();
     return result[0];
   }
 
   async updateSignal(id: number, signal: Partial<InsertSignal>): Promise<Signal | null> {
-    const result = await db.update(signals).set(signal).where(eq(signals.id, id)).returning();
+    const result = await this.db.update(schema.signals).set(signal).where(eq(schema.signals.id, id)).returning();
     return result[0] || null;
   }
 
   async deleteSignal(id: number): Promise<boolean> {
-    const result = await db.delete(signals).where(eq(signals.id, id));
+    const result = await this.db.delete(schema.signals).where(eq(schema.signals.id, id));
     return result.rowCount > 0;
   }
 
   async getSignalsByUser(userId: number): Promise<Signal[]> {
-    return await db.select().from(signals).where(eq(signals.userId, userId)).orderBy(desc(signals.createdAt));
+    return await this.db.select().from(schema.signals).where(eq(schema.signals.userId, userId));
   }
 
   async getSignalsByDateRange(startDate: Date, endDate: Date): Promise<Signal[]> {
-    return await db.select().from(signals)
-      .where(and(
-        gte(signals.createdAt, startDate),
-        lte(signals.createdAt, endDate)
-      ))
-      .orderBy(desc(signals.createdAt));
+    return await this.db.select().from(schema.signals).where(
+      and(
+        gte(schema.signals.createdAt, startDate),
+        lte(schema.signals.createdAt, endDate)
+      )
+    );
   }
 
   async getSignalsByChannel(channelId: number): Promise<Signal[]> {
-    return await db.select().from(signals).where(eq(signals.channelId, channelId)).orderBy(desc(signals.createdAt));
+    return await this.db.select().from(schema.signals).where(eq(schema.signals.channelId, channelId));
   }
 
-  // Channels
+  // Channel operations
   async getChannels(): Promise<Channel[]> {
-    return await db.select().from(channels).orderBy(asc(channels.name));
+    return await this.db.select().from(schema.channels);
   }
 
   async getChannelById(id: number): Promise<Channel | null> {
-    const result = await db.select().from(channels).where(eq(channels.id, id)).limit(1);
-    return result[0] || null;
+    const channels = await this.db.select().from(schema.channels).where(eq(schema.channels.id, id));
+    return channels[0] || null;
   }
 
   async createChannel(channel: InsertChannel): Promise<Channel> {
-    const result = await db.insert(channels).values(channel).returning();
+    const result = await this.db.insert(schema.channels).values(channel).returning();
     return result[0];
   }
 
   async updateChannel(id: number, channel: Partial<InsertChannel>): Promise<Channel | null> {
-    const result = await db.update(channels).set(channel).where(eq(channels.id, id)).returning();
+    const result = await this.db.update(schema.channels).set(channel).where(eq(schema.channels.id, id)).returning();
     return result[0] || null;
   }
 
   async deleteChannel(id: number): Promise<boolean> {
-    const result = await db.delete(channels).where(eq(channels.id, id));
+    const result = await this.db.delete(schema.channels).where(eq(schema.channels.id, id));
     return result.rowCount > 0;
   }
 
-  // Messages
+  // Message operations
   async getMessages(): Promise<Message[]> {
-    return await db.select().from(messages).orderBy(desc(messages.createdAt));
+    return await this.db.select().from(schema.messages).orderBy(desc(schema.messages.createdAt));
   }
 
   async getMessageById(id: number): Promise<Message | null> {
-    const result = await db.select().from(messages).where(eq(messages.id, id)).limit(1);
-    return result[0] || null;
+    const messages = await this.db.select().from(schema.messages).where(eq(schema.messages.id, id));
+    return messages[0] || null;
   }
 
   async createMessage(message: InsertMessage): Promise<Message> {
-    const result = await db.insert(messages).values(message).returning();
+    const result = await this.db.insert(schema.messages).values(message).returning();
     return result[0];
   }
 
   async updateMessage(id: number, message: Partial<InsertMessage>): Promise<Message | null> {
-    const result = await db.update(messages).set(message).where(eq(messages.id, id)).returning();
+    const result = await this.db.update(schema.messages).set(message).where(eq(schema.messages.id, id)).returning();
     return result[0] || null;
   }
 
   async deleteMessage(id: number): Promise<boolean> {
-    const result = await db.delete(messages).where(eq(messages.id, id));
+    const result = await this.db.delete(schema.messages).where(eq(schema.messages.id, id));
     return result.rowCount > 0;
   }
 
   async getMessagesByChannel(channelId: number): Promise<Message[]> {
-    return await db.select().from(messages).where(eq(messages.channelId, channelId)).orderBy(desc(messages.createdAt));
+    return await this.db.select().from(schema.messages).where(eq(schema.messages.channelId, channelId));
   }
 
-  // Trades
+  // Trade operations
   async getTrades(): Promise<Trade[]> {
-    return await db.select().from(trades).orderBy(desc(trades.createdAt));
+    return await this.db.select().from(schema.trades).orderBy(desc(schema.trades.createdAt));
   }
 
   async getTradeById(id: number): Promise<Trade | null> {
-    const result = await db.select().from(trades).where(eq(trades.id, id)).limit(1);
-    return result[0] || null;
+    const trades = await this.db.select().from(schema.trades).where(eq(schema.trades.id, id));
+    return trades[0] || null;
   }
 
   async createTrade(trade: InsertTrade): Promise<Trade> {
-    const result = await db.insert(trades).values({
-      ...trade,
-      status: trade.status || "pending",
-      executedAt: null,
-    }).returning();
+    const result = await this.db.insert(schema.trades).values(trade).returning();
     return result[0];
   }
 
   async updateTrade(id: number, trade: Partial<InsertTrade>): Promise<Trade | null> {
-    const result = await db.update(trades).set(trade).where(eq(trades.id, id)).returning();
+    const result = await this.db.update(schema.trades).set(trade).where(eq(schema.trades.id, id)).returning();
     return result[0] || null;
   }
 
   async deleteTrade(id: number): Promise<boolean> {
-    const result = await db.delete(trades).where(eq(trades.id, id));
+    const result = await this.db.delete(schema.trades).where(eq(schema.trades.id, id));
     return result.rowCount > 0;
   }
 
   async getTradesByUser(userId: number): Promise<Trade[]> {
-    return await db.select().from(trades).where(eq(trades.userId, userId)).orderBy(desc(trades.createdAt));
+    return await this.db.select().from(schema.trades).where(eq(schema.trades.userId, userId));
   }
 
-  // Manual Rules
+  // Manual Rules operations
   async getManualRules(): Promise<ManualRule[]> {
-    return await db.select().from(manualRules).orderBy(asc(manualRules.pattern));
+    return await this.db.select().from(schema.manualRules);
   }
 
   async getManualRuleById(id: number): Promise<ManualRule | null> {
-    const result = await db.select().from(manualRules).where(eq(manualRules.id, id)).limit(1);
-    return result[0] || null;
+    const rules = await this.db.select().from(schema.manualRules).where(eq(schema.manualRules.id, id));
+    return rules[0] || null;
   }
 
   async createManualRule(rule: InsertManualRule): Promise<ManualRule> {
-    const result = await db.insert(manualRules).values({
-      ...rule,
-      usageCount: 0,
-      isActive: rule.isActive ?? true,
-    }).returning();
+    const result = await this.db.insert(schema.manualRules).values(rule).returning();
     return result[0];
   }
 
   async updateManualRule(id: number, rule: Partial<InsertManualRule>): Promise<ManualRule | null> {
-    const result = await db.update(manualRules).set(rule).where(eq(manualRules.id, id)).returning();
+    const result = await this.db.update(schema.manualRules).set(rule).where(eq(schema.manualRules.id, id)).returning();
     return result[0] || null;
   }
 
   async deleteManualRule(id: number): Promise<boolean> {
-    const result = await db.delete(manualRules).where(eq(manualRules.id, id));
+    const result = await this.db.delete(schema.manualRules).where(eq(schema.manualRules.id, id));
     return result.rowCount > 0;
   }
 
   async getActiveManualRules(): Promise<ManualRule[]> {
-    return await db.select().from(manualRules).where(eq(manualRules.isActive, true));
+    return await this.db.select().from(schema.manualRules).where(eq(schema.manualRules.isActive, true));
   }
 
-  // Training Data
+  // Training Data operations
   async getTrainingData(): Promise<TrainingData[]> {
-    return await db.select().from(trainingData).orderBy(desc(trainingData.createdAt));
+    return await this.db.select().from(schema.trainingData);
   }
 
   async getTrainingDataById(id: number): Promise<TrainingData | null> {
-    const result = await db.select().from(trainingData).where(eq(trainingData.id, id)).limit(1);
-    return result[0] || null;
+    const data = await this.db.select().from(schema.trainingData).where(eq(schema.trainingData.id, id));
+    return data[0] || null;
   }
 
   async createTrainingData(data: InsertTrainingData): Promise<TrainingData> {
-    const result = await db.insert(trainingData).values({
-      ...data,
-      isVerified: data.isVerified ?? false,
-    }).returning();
+    const result = await this.db.insert(schema.trainingData).values(data).returning();
     return result[0];
   }
 
   async updateTrainingData(id: number, data: Partial<InsertTrainingData>): Promise<TrainingData | null> {
-    const result = await db.update(trainingData).set(data).where(eq(trainingData.id, id)).returning();
+    const result = await this.db.update(schema.trainingData).set(data).where(eq(schema.trainingData.id, id)).returning();
     return result[0] || null;
   }
 
   async deleteTrainingData(id: number): Promise<boolean> {
-    const result = await db.delete(trainingData).where(eq(trainingData.id, id));
+    const result = await this.db.delete(schema.trainingData).where(eq(schema.trainingData.id, id));
     return result.rowCount > 0;
   }
 
-  // User Settings
+  // User Settings operations
   async getUserSettings(userId: number): Promise<UserSettings | null> {
-    const result = await db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1);
-    return result[0] || null;
+    const settings = await this.db.select().from(schema.userSettings).where(eq(schema.userSettings.userId, userId));
+    return settings[0] || null;
   }
 
   async updateUserSettings(userId: number, settings: Partial<InsertUserSettings>): Promise<UserSettings | null> {
-    const result = await db.update(userSettings).set({
-      ...settings,
-      updatedAt: new Date(),
-    }).where(eq(userSettings.userId, userId)).returning();
+    const result = await this.db.update(schema.userSettings).set(settings).where(eq(schema.userSettings.userId, userId)).returning();
     return result[0] || null;
   }
 
-  // Audit Logs
+  // Audit Log operations
   async createAuditLog(log: InsertAuditLog): Promise<AuditLog> {
-    const result = await db.insert(auditLogs).values(log).returning();
+    const result = await this.db.insert(schema.auditLogs).values(log).returning();
     return result[0];
   }
 
   async getAuditLogs(): Promise<AuditLog[]> {
-    return await db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt));
+    return await this.db.select().from(schema.auditLogs).orderBy(desc(schema.auditLogs.createdAt));
   }
 
-  // Provider Stats
+  // Provider Stats operations
   async getProviderStats(): Promise<ProviderStats[]> {
-    return await db.select().from(providerStats).orderBy(desc(providerStats.lastUpdated));
+    return await this.db.select().from(schema.providerStats);
   }
 
   async updateProviderStats(channelId: number, stats: Partial<InsertProviderStats>): Promise<ProviderStats | null> {
-    const result = await db.update(providerStats).set({
-      ...stats,
-      lastUpdated: new Date(),
-    }).where(eq(providerStats.channelId, channelId)).returning();
-    
-    if (result.length === 0) {
-      // Create if doesn't exist
-      const created = await db.insert(providerStats).values({
-        channelId,
-        totalSignals: 0,
-        winRate: 0,
-        avgRiskReward: 0,
-        avgExecutionTime: 0,
-        ...stats,
-      }).returning();
-      return created[0];
-    }
-    
-    return result[0];
+    const result = await this.db.update(schema.providerStats).set(stats).where(eq(schema.providerStats.channelId, channelId)).returning();
+    return result[0] || null;
   }
 
-  // Database health check
+  // Health check
   async healthCheck(): Promise<boolean> {
     try {
-      await db.select().from(users).limit(1);
+      await this.db.select().from(schema.users).limit(1);
       return true;
     } catch (error) {
-      console.error('Database health check failed:', error);
       return false;
     }
   }
+
+  // Helper methods
+  async incrementRuleUsage(ruleId: number): Promise<void> {
+    await this.db.update(schema.manualRules)
+      .set({ usageCount: schema.manualRules.usageCount + 1 })
+      .where(eq(schema.manualRules.id, ruleId));
+  }
 }
 
-// Export singleton instance
 export const storage = new DatabaseStorage();
