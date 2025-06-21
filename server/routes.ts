@@ -846,5 +846,167 @@ export async function registerRoutes(app: Express): Promise<Express> {
     }
   });
 
+  // Strategy import/export endpoints
+  app.post("/api/strategy/import", requireAuth, async (req, res) => {
+    try {
+      const strategyData = req.body;
+      
+      // Validate strategy data
+      if (!strategyData.name || !strategyData.rules) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "Invalid strategy data: name and rules are required" 
+        });
+      }
+
+      // Additional validation
+      const errors = [];
+      
+      if (strategyData.rules.length === 0) {
+        errors.push("Strategy must have at least one rule");
+      }
+
+      // Check rule structure
+      for (const rule of strategyData.rules) {
+        if (!rule.id || !rule.type || !rule.config) {
+          errors.push(`Rule ${rule.id || 'unknown'} is missing required fields`);
+        }
+      }
+
+      if (errors.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: "Validation failed",
+          details: errors
+        });
+      }
+
+      // Store strategy in database
+      const strategyRecord = await storage.createManualRule({
+        name: `imported_${strategyData.name}`,
+        description: `Imported strategy: ${strategyData.description || strategyData.name}`,
+        conditionType: 'imported_strategy',
+        conditionValue: JSON.stringify(strategyData),
+        actionType: 'execute_strategy',
+        actionValue: 'strategy_runtime',
+        isActive: true,
+        priority: 1,
+        usageCount: 0,
+        userId: req.session?.user?.id || 1
+      });
+
+      console.log('Strategy imported successfully:', strategyData.name);
+
+      res.json({
+        success: true,
+        message: "Strategy imported successfully",
+        strategyId: strategyRecord.id,
+        strategy: {
+          id: strategyRecord.id,
+          name: strategyData.name,
+          version: strategyData.version || '1.0.0',
+          importedAt: new Date().toISOString()
+        }
+      });
+
+    } catch (error) {
+      console.error('Strategy import error:', error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to import strategy"
+      });
+    }
+  });
+
+  app.get("/api/strategy/list", requireAuth, async (req, res) => {
+    try {
+      // Get strategies from database
+      const manualRules = await storage.getManualRules();
+      
+      const strategies = manualRules
+        .filter(rule => rule.conditionType === 'visual_strategy' || rule.conditionType === 'imported_strategy')
+        .map(rule => {
+          try {
+            const strategyData = JSON.parse(rule.conditionValue);
+            return {
+              id: rule.id,
+              name: strategyData.name || rule.name,
+              description: strategyData.description || rule.description,
+              version: strategyData.version || '1.0.0',
+              created: strategyData.created || new Date().toISOString(),
+              rules: strategyData.rules || [],
+              connections: strategyData.connections || [],
+              lastUpdated: rule.updatedAt || new Date().toISOString(),
+              usageCount: rule.usageCount
+            };
+          } catch (e) {
+            // Handle malformed strategy data
+            return {
+              id: rule.id,
+              name: rule.name,
+              description: rule.description,
+              version: '1.0.0',
+              created: new Date().toISOString(),
+              rules: [],
+              connections: [],
+              lastUpdated: new Date().toISOString(),
+              usageCount: rule.usageCount,
+              error: 'Invalid strategy data'
+            };
+          }
+        });
+
+      res.json({
+        success: true,
+        strategies,
+        totalStrategies: strategies.length
+      });
+
+    } catch (error) {
+      console.error('Error fetching strategies:', error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to fetch strategies"
+      });
+    }
+  });
+
+  app.get("/api/strategy/export/:id", requireAuth, async (req, res) => {
+    try {
+      const strategyId = parseInt(req.params.id);
+      const rule = await storage.getManualRuleById(strategyId);
+
+      if (!rule) {
+        return res.status(404).json({
+          success: false,
+          error: "Strategy not found"
+        });
+      }
+
+      try {
+        const strategyData = JSON.parse(rule.conditionValue);
+        
+        // Set appropriate headers for file download
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="${strategyData.name || 'strategy'}_export.json"`);
+        
+        res.json(strategyData);
+
+      } catch (e) {
+        res.status(500).json({
+          success: false,
+          error: "Invalid strategy data"
+        });
+      }
+
+    } catch (error) {
+      console.error('Strategy export error:', error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to export strategy"
+      });
+    }
+  });
+
   return app;
 }
