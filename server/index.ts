@@ -59,19 +59,22 @@ function log(message: string) {
       const { createServer } = await import("vite");
       
       const vite = await createServer({
-        server: { middlewareMode: true },
+        server: { 
+          middlewareMode: true,
+          host: "0.0.0.0",
+          port: 5173
+        },
         appType: "spa",
         root: path.resolve(__dirname, "../client"),
-        configFile: false, // Use inline config
-        plugins: [
-          (await import("@vitejs/plugin-react")).default()
-        ],
         resolve: {
           alias: {
             "@": path.resolve(__dirname, "../client/src"),
             "@shared": path.resolve(__dirname, "../shared"),
           }
-        }
+        },
+        plugins: [
+          (await import("@vitejs/plugin-react")).default()
+        ]
       });
 
       app.use(vite.ssrFixStacktrace);
