@@ -2,6 +2,7 @@ import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useState, useEffect, createContext, useContext } from "react";
+import StrategyBuilder from "./components/StrategyBuilder";
 
 // Simple Auth Context
 const AuthContext = createContext<{
@@ -160,7 +161,13 @@ function Dashboard() {
     <div className="min-h-screen bg-gray-900 text-white">
       <div className="bg-gray-800 p-4 border-b border-gray-700">
         <div className="flex justify-between items-center max-w-6xl mx-auto">
-          <h1 className="text-xl font-bold">AI Trading Signal Parser</h1>
+          <div className="flex items-center gap-6">
+            <h1 className="text-xl font-bold">AI Trading Signal Parser</h1>
+            <nav className="flex gap-4">
+              <a href="/" className="text-gray-300 hover:text-white transition-colors">Dashboard</a>
+              <a href="/strategy-builder" className="text-gray-300 hover:text-white transition-colors">Strategy Builder</a>
+            </nav>
+          </div>
           <div className="flex items-center gap-4">
             <span className="text-gray-300">Welcome, {user?.username}</span>
             <button
@@ -240,6 +247,11 @@ function AuthenticatedRouter() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/strategy-builder">
+        <div className="h-screen">
+          <StrategyBuilder />
+        </div>
+      </Route>
       <Route component={() => <div>404 - Page not found</div>} />
     </Switch>
   );

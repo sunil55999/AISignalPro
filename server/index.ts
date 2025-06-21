@@ -44,15 +44,15 @@ function log(message: string) {
     log(`Database initialization failed: ${error}`);
   }
 
-  // Register API routes first
-  await registerRoutes(app);
-
-  // Add basic health check route
+  // Add basic health check route before other routes
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // Setup frontend serving
+  // Register API routes
+  await registerRoutes(app);
+
+  // Setup frontend serving with proper Vite integration
   if (process.env.NODE_ENV === "development") {
     try {
       const { createServer } = await import("vite");
@@ -66,14 +66,10 @@ function log(message: string) {
 
       app.use(vite.ssrFixStacktrace);
       app.use(vite.middlewares);
-      log("Vite middleware configured successfully");
+      log("Vite development server configured successfully");
     } catch (error) {
       log(`Vite setup failed: ${error}`);
-      // Fallback to static serving
-      app.use(express.static(path.resolve(__dirname, "../client")));
-      app.get("*", (_req, res) => {
-        res.sendFile(path.resolve(__dirname, "../client/index.html"));
-      });
+      throw error;
     }
   } else {
     // Serve static files in production
@@ -85,9 +81,10 @@ function log(message: string) {
     });
   }
 
-  const PORT = 5000;
+  const PORT = process.env.PORT || 5000;
   server.listen(PORT, "0.0.0.0", () => {
     log(`serving on port ${PORT}`);
+    log(`Health check: http://localhost:${PORT}/health`);
   });
 })();
 

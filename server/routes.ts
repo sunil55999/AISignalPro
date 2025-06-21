@@ -465,7 +465,132 @@ export async function registerRoutes(app: Express): Promise<Express> {
     }
   });
 
-  // Additional endpoints would be added here...
+  // Strategy management endpoints
+  app.post("/api/strategy/update", requireAuth, async (req, res) => {
+    try {
+      const strategyData = req.body;
+      
+      // Validate strategy data
+      if (!strategyData.name || !strategyData.rules) {
+        return res.status(400).json({ error: "Invalid strategy data" });
+      }
+      
+      // Store strategy configuration
+      const strategyJson = JSON.stringify(strategyData);
+      
+      // You can store this in database or file system
+      // For now, we'll just acknowledge receipt
+      console.log('Strategy updated:', strategyData.name);
+      console.log('Rules count:', strategyData.rules.length);
+      console.log('Connections count:', strategyData.connections?.length || 0);
+      
+      res.json({ 
+        success: true, 
+        message: "Strategy updated successfully",
+        strategyId: `strategy_${Date.now()}`
+      });
+    } catch (error) {
+      console.error('Strategy update error:', error);
+      res.status(500).json({ error: "Failed to update strategy" });
+    }
+  });
+
+  app.get("/api/admin/strategy-config", requireAuth, async (req, res) => {
+    try {
+      // Return default strategy configuration for auto_sync.py
+      const defaultConfig = {
+        max_lot_size: 1.0,
+        risk_percent: 2.0,
+        enabled_pairs: ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"],
+        disabled_pairs: ["AUDNZD", "NZDCAD"],
+        stealth_mode: true,
+        auto_trade: true,
+        confidence_threshold: 0.85,
+        max_daily_trades: 10,
+        trading_hours: {
+          start: "08:00",
+          end: "18:00",
+          timezone: "UTC"
+        },
+        symbol_mapping: {
+          "GOLD": "XAUUSD",
+          "SILVER": "XAGUSD"
+        }
+      };
+      
+      res.json(defaultConfig);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch strategy config" });
+    }
+  });
+
+  app.get("/api/admin/symbol-mapping", requireAuth, async (req, res) => {
+    try {
+      const symbolMapping = {
+        "GOLD": "XAUUSD",
+        "SILVER": "XAGUSD",
+        "US30": "US30.cash",
+        "NAS100": "NAS100.cash",
+        "SPX500": "SPX500.cash"
+      };
+      
+      res.json(symbolMapping);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch symbol mapping" });
+    }
+  });
+
+  app.get("/api/admin/stealth-config", requireAuth, async (req, res) => {
+    try {
+      const stealthConfig = {
+        enabled: true,
+        delay_range: [1000, 3000],
+        randomize_lots: true,
+        max_concurrent_trades: 5,
+        hide_from_history: false
+      };
+      
+      res.json(stealthConfig);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch stealth config" });
+    }
+  });
+
+  app.get("/api/admin/lot-settings", requireAuth, async (req, res) => {
+    try {
+      const lotSettings = {
+        default_lot: 0.1,
+        max_lot: 1.0,
+        min_lot: 0.01,
+        risk_based: true,
+        account_percentage: 2.0
+      };
+      
+      res.json(lotSettings);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch lot settings" });
+    }
+  });
+
+  app.post("/api/system/status", async (req, res) => {
+    try {
+      const statusData = req.body;
+      
+      // Log the received system status
+      console.log('System status received:', {
+        mt5_connected: statusData.mt5_connected,
+        parser_health: statusData.parser_health,
+        error_count_24h: statusData.error_count_24h,
+        active_trades: statusData.active_trades,
+        timestamp: statusData.timestamp
+      });
+      
+      res.json({ success: true, message: "Status received" });
+    } catch (error) {
+      console.error('System status error:', error);
+      res.status(500).json({ error: "Failed to process system status" });
+    }
+  });
 
   return app;
 }

@@ -187,29 +187,37 @@ class AutoSyncManager:
             try:
                 self.last_sync_attempt = datetime.now()
                 
-                # Pull strategy updates from admin API
+                # Pull configurations from cloud every 60 seconds
                 strategy_updated = self._pull_strategy_config()
-                
-                # Pull symbol mapping and settings
                 symbols_updated = self._pull_symbol_mapping()
                 stealth_updated = self._pull_stealth_config()
+                lot_updated = self._pull_lot_settings()
                 
-                # Push system status to cloud
+                # Push MT5 connection status, parser health, error count to cloud API
                 status_pushed = self._push_system_status()
                 
-                # Log sync attempt
+                # Log sync attempt with timestamps
                 self._log_sync_attempt({
                     "strategy_updated": strategy_updated,
                     "symbols_updated": symbols_updated,
                     "stealth_updated": stealth_updated,
-                    "status_pushed": status_pushed
+                    "lot_updated": lot_updated,
+                    "status_pushed": status_pushed,
+                    "sync_timestamp": datetime.now().isoformat()
                 })
                 
-                if all([strategy_updated, symbols_updated, stealth_updated, status_pushed]):
+                if all([strategy_updated, symbols_updated, stealth_updated, lot_updated, status_pushed]):
                     self.last_successful_sync = datetime.now()
-                    logger.info("Sync cycle completed successfully")
+                    logger.info(f"Sync cycle completed successfully at {datetime.now().isoformat()}")
                 else:
-                    logger.warning("Sync cycle completed with some failures")
+                    logger.warning(f"Sync cycle completed with some failures at {datetime.now().isoformat()}")
+                    failed_operations = []
+                    if not strategy_updated: failed_operations.append("strategy_config")
+                    if not symbols_updated: failed_operations.append("symbol_mapping") 
+                    if not stealth_updated: failed_operations.append("stealth_config")
+                    if not lot_updated: failed_operations.append("lot_settings")
+                    if not status_pushed: failed_operations.append("status_push")
+                    logger.warning(f"Failed operations: {', '.join(failed_operations)}")
                 
             except Exception as e:
                 logger.error(f"Sync loop error: {e}")
