@@ -5,6 +5,8 @@ import { fallbackStorage } from "./fallback-storage.js";
 import { createHash } from "crypto";
 import fs from "fs";
 import path from "path";
+import terminalRoutes from "../admin-panel/routes/terminal.js";
+import terminalRoutes from "../admin-panel/routes/terminal.js";
 
 // Advanced Signal Parser Class
 class AdvancedSignalParser {
@@ -1007,6 +1009,9 @@ export async function registerRoutes(app: Express): Promise<Express> {
       });
     }
   });
+
+  // Register terminal management routes
+  app.use(terminalRoutes);
 
   return app;
 }
