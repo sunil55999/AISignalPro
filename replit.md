@@ -563,6 +563,7 @@ Project Evolution Timeline:
 - June 21, 2025: ENHANCED ALERT SYSTEM: copilot_bot.py upgraded with MT5 disconnect alerts, parsing error notifications, strategy validation alerts, and inline YES/NO retry buttons with signal summaries
 - June 21, 2025: AUTO SYNC MODULE: Created auto_sync.py for automatic cloud synchronization - pulls strategy updates every 60 seconds, pushes system status, manages symbol mapping and stealth configs with comprehensive logging
 - June 21, 2025: PARSER UPLOAD SYSTEM: Implemented POST /api/parser/push endpoint with multer file upload, WebSocket broadcasting to terminals, database logging with file hash and deploy timestamp, complete deployment tracking
+- June 21, 2025: SIGNAL REPLAY FUNCTIONALITY: Added replay buttons to signal displays in UserDashboard.tsx, created dedicated Signals.tsx component with filtering/search, implemented POST /api/signal/replay endpoint that writes to signal files for desktop app pickup with status tracking
 ```
 
 ## 🎯 System Status & Health

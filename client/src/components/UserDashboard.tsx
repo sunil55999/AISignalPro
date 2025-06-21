@@ -40,12 +40,16 @@ import {
   Play,
   Pause,
   Target,
-  Shield
+  Shield,
+  RotateCcw,
+  Eye,
+  Loader2
 } from "lucide-react";
 
 export default function UserDashboard() {
   const { toast } = useToast();
   const [userId] = useState(1); // Mock user ID - in real app would come from auth
+  const [replayingSignals, setReplayingSignals] = useState<Set<number>>(new Set());
   
   // Fetch user settings
   const { data: userSettings, isLoading: settingsLoading } = useQuery({
@@ -129,6 +133,61 @@ export default function UserDashboard() {
       case 'breakeven': return 'text-yellow-500';
       default: return 'text-gray-500';
     }
+  };
+
+  // Signal replay mutation
+  const replaySignalMutation = useMutation({
+    mutationFn: async (signalId: number) => {
+      return await apiRequest(`/api/signal/replay`, {
+        method: 'POST',
+        body: JSON.stringify({ signal_id: signalId }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+    },
+    onMutate: (signalId: number) => {
+      setReplayingSignals(prev => new Set(prev.add(signalId)));
+    },
+    onSuccess: (data: any, signalId: number) => {
+      setReplayingSignals(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(signalId);
+        return newSet;
+      });
+
+      if (data.success) {
+        toast({
+          title: "Signal Replayed",
+          description: data.message || "Signal has been sent to desktop app for re-execution",
+        });
+        // Refresh signals
+        queryClient.invalidateQueries({ queryKey: ['/api/user', userId, 'signals'] });
+      } else {
+        toast({
+          title: "Replay Failed",
+          description: data.error || "Failed to replay signal",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error: any, signalId: number) => {
+      setReplayingSignals(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(signalId);
+        return newSet;
+      });
+
+      toast({
+        title: "Replay Error",
+        description: "Network error occurred while replaying signal",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleReplaySignal = (signalId: number) => {
+    replaySignalMutation.mutate(signalId);
   };
 
   if (settingsLoading) {
@@ -352,6 +411,7 @@ export default function UserDashboard() {
                     <TableHead className="text-gray-300">TP</TableHead>
                     <TableHead className="text-gray-300">Confidence</TableHead>
                     <TableHead className="text-gray-300">Status</TableHead>
+                    <TableHead className="text-gray-300">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -382,6 +442,32 @@ export default function UserDashboard() {
                         ) : (
                           <Badge variant="default">AI Parsed</Badge>
                         )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleReplaySignal(signal.id)}
+                            disabled={replayingSignals.has(signal.id)}
+                            className="flex items-center gap-1"
+                          >
+                            {replayingSignals.has(signal.id) ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <RotateCcw className="w-3 h-3" />
+                            )}
+                            Replay
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="flex items-center gap-1"
+                          >
+                            <Eye className="w-3 h-3" />
+                            View
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

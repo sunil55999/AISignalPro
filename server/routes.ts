@@ -1017,5 +1017,111 @@ export async function registerRoutes(app: Express): Promise<Express> {
   // Register parser management routes
   app.use(parserRoutes);
 
+  // Signal replay endpoint
+  app.post("/api/signal/replay", async (req, res) => {
+    try {
+      const { signal_id } = req.body;
+
+      if (!signal_id) {
+        return res.status(400).json({
+          success: false,
+          error: "Signal ID is required"
+        });
+      }
+
+      // Fetch the signal from database
+      const signal = await storage.getSignalById(signal_id);
+      if (!signal) {
+        return res.status(404).json({
+          success: false,
+          error: "Signal not found"
+        });
+      }
+
+      // Create replay signal data for desktop app
+      const replayData = {
+        type: "signal_replay",
+        signal_id: signal.id,
+        original_signal: {
+          pair: signal.pair,
+          action: signal.action,
+          entry: signal.entry,
+          sl: signal.sl,
+          tp: signal.tp,
+          confidence: signal.confidence,
+          raw_text: signal.rawText,
+          created_at: signal.createdAt
+        },
+        replay_timestamp: new Date().toISOString(),
+        source: "admin_replay"
+      };
+
+      // Write to signal file for desktop app pickup
+      const signalFilePath = path.join(process.cwd(), "mt5_signals.json");
+      const userSignalPath = path.join("C:", "TradingSignals", "user1.json");
+
+      try {
+        // Write to main signal file
+        fs.writeFileSync(signalFilePath, JSON.stringify(replayData, null, 2));
+        
+        // Also write to user-specific file if it exists
+        try {
+          const userDir = path.dirname(userSignalPath);
+          if (fs.existsSync(userDir)) {
+            fs.writeFileSync(userSignalPath, JSON.stringify(replayData, null, 2));
+          }
+        } catch (userFileError) {
+          console.log("User signal file not accessible:", userFileError.message);
+        }
+
+        console.log(`Signal ${signal_id} queued for replay:`, replayData);
+
+        // Update signal status to indicate replay
+        await storage.updateSignal(signal_id, {
+          status: "replayed",
+          updatedAt: new Date()
+        });
+
+        // Log the replay action
+        await storage.createAuditLog({
+          action: "signal_replay",
+          details: {
+            signal_id: signal.id,
+            signal_pair: signal.pair,
+            signal_action: signal.action,
+            replay_timestamp: new Date().toISOString()
+          },
+          userId: req.session?.user?.id || 1
+        });
+
+        res.json({
+          success: true,
+          message: `Signal ${signal.pair} ${signal.action} has been queued for replay`,
+          signal: {
+            id: signal.id,
+            pair: signal.pair,
+            action: signal.action,
+            entry: signal.entry,
+            replay_status: "queued"
+          }
+        });
+
+      } catch (fileError) {
+        console.error("Failed to write signal file:", fileError);
+        res.status(500).json({
+          success: false,
+          error: "Failed to queue signal for replay"
+        });
+      }
+
+    } catch (error) {
+      console.error("Signal replay error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Internal server error"
+      });
+    }
+  });
+
   return app;
 }

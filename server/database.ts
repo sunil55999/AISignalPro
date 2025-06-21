@@ -287,6 +287,17 @@ export class DatabaseStorage {
     return result.rowCount > 0;
   }
 
+  // Additional signal operations for replay functionality
+  async getSignalById(id: number): Promise<Signal | null> {
+    const signals = await this.db.select().from(schema.signals).where(eq(schema.signals.id, id));
+    return signals[0] || null;
+  }
+
+  async updateSignal(id: number, updates: Partial<InsertSignal>): Promise<Signal | null> {
+    const result = await this.db.update(schema.signals).set(updates).where(eq(schema.signals.id, id)).returning();
+    return result[0] || null;
+  }
+
   // Health check
   async healthCheck(): Promise<boolean> {
     try {
