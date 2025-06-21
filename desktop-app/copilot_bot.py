@@ -98,6 +98,15 @@ class TradingCopilotBot:
         
         # Alert system
         self.alert_queue = []
+        self.pending_retries = {}  # In-memory storage for pending retries
+        
+        # Load bot settings
+        self._load_blacklisted_pairs()
+        self._load_bot_settings()
+        
+        # Start monitoring system
+        self.monitoring_active = False
+        self.monitoring_thread = None
         self.pending_retries = {}  # Store failed trades pending retry
         
         # Initialize Telegram bot
@@ -335,11 +344,17 @@ class TradingCopilotBot:
             logger.error(f"Error getting recent trades: {e}")
             return []
     
-    def _get_api_data(self, endpoint: str) -> Optional[Dict]:
+    def _get_api_data(self, endpoint: str, method: str = "GET", data: Optional[Dict] = None) -> Optional[Dict]:
         """Get data from the API server"""
         try:
             api_base = self.config.get("API_BASE_URL", "http://localhost:5000")
-            response = requests.get(f"{api_base}{endpoint}", timeout=10)
+            url = f"{api_base}{endpoint}"
+            
+            if method.upper() == "POST":
+                response = requests.post(url, json=data, timeout=15)
+            else:
+                response = requests.get(url, timeout=10)
+            
             if response.status_code == 200:
                 return response.json()
             else:
@@ -447,6 +462,59 @@ class TradingCopilotBot:
         """Send retry prompt with YES/NO buttons"""
         if not self.application:
             return
+        
+        # Generate unique retry ID
+        retry_id = f"retry_{int(time.time() * 1000)}"
+        
+        # Save pending retry to database
+        self._save_pending_retry(retry_id, trade_data, signal_summary)
+        
+        # Create retry message with signal summary
+        retry_msg = f"""
+🔄 **TRADE RETRY REQUIRED**
+
+❌ **Error:** {error_msg}
+
+📊 **Signal Details:**
+**Channel:** {signal_summary.channel_name}
+**Time:** {signal_summary.timestamp.strftime('%H:%M:%S')}
+**Raw Signal:** {signal_summary.raw_text[:200]}...
+
+🔧 **Trade Parameters:**
+**Symbol:** {trade_data.get('pair', 'Unknown')}
+**Action:** {trade_data.get('action', 'Unknown')}
+**Entry:** {trade_data.get('entry', 'N/A')}
+**Stop Loss:** {trade_data.get('sl', 'N/A')}
+**Take Profit:** {trade_data.get('tp', 'N/A')}
+**Lot Size:** {trade_data.get('lotSize', 'N/A')}
+
+Would you like to retry this trade?
+        """
+        
+        # Create inline keyboard with YES/NO buttons
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ YES - Retry", callback_data=f"retry_yes_{retry_id}"),
+                InlineKeyboardButton("❌ NO - Skip", callback_data=f"retry_no_{retry_id}")
+            ],
+            [
+                InlineKeyboardButton("📝 Edit Parameters", callback_data=f"retry_edit_{retry_id}"),
+                InlineKeyboardButton("ℹ️ Show Details", callback_data=f"retry_details_{retry_id}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Send to all authorized users
+        for user_id in self.authorized_users + self.admin_users:
+            try:
+                await self.application.bot.send_message(
+                    chat_id=user_id,
+                    text=retry_msg,
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                logger.error(f"Failed to send retry prompt to user {user_id}: {e}")
         
         # Generate unique retry ID
         retry_id = f"retry_{int(time.time())}"
@@ -644,6 +712,20 @@ Would you like to retry this trade?
             await self._send_retry_prompt(trade_data, signal_summary, "; ".join(validation_errors))
         else:
             await self._send_alert(alert, signal_summary)
+    
+    async def alert_trade_failure(self, trade_data: Dict, signal_summary: SignalSummary, error_msg: str):
+        """Alert about trade execution failures"""
+        alert = AlertInfo(
+            alert_type="TRADE_EXECUTION_FAILURE",
+            message=f"Trade execution failed for {trade_data.get('pair', 'Unknown')}",
+            timestamp=datetime.now(),
+            severity="high",
+            source="Trade_Executor",
+            details={"trade_data": trade_data, "error": error_msg}
+        )
+        
+        # Always offer retry for trade execution failures
+        await self._send_retry_prompt(trade_data, signal_summary, error_msg)
     
     async def alert_trade_failure(self, trade_data: Dict, signal_summary: SignalSummary, error_msg: str):
         """Alert about trade execution failures"""
