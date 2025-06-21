@@ -44,24 +44,21 @@ function log(message: string) {
     log(`Database initialization failed: ${error}`);
   }
 
-  // Register API routes
-  const httpServer = await registerRoutes(app);
+  // Register API routes first
+  await registerRoutes(app);
 
-  // Setup Vite for development
+  // Setup frontend serving
   if (process.env.NODE_ENV === "development") {
-    const { createServer } = await import("vite");
+    // Simple static file serving for development
+    app.use(express.static(path.resolve(__dirname, "../client")));
     
-    const vite = await createServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-      root: path.resolve(__dirname, "../client"),
+    // Fallback to index.html for SPA routing
+    app.get("*", (_req, res) => {
+      res.sendFile(path.resolve(__dirname, "../client/index.html"));
     });
-
-    app.use(vite.ssrFixStacktrace);
-    app.use(vite.middlewares);
   } else {
     // Serve static files in production
-    const clientPath = path.resolve(__dirname, "../client/dist");
+    const clientPath = path.resolve(__dirname, "../dist/public");
     app.use(express.static(clientPath));
     
     app.get("*", (_req, res) => {

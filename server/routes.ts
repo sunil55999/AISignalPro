@@ -316,7 +316,7 @@ class TradeDispatcher {
   }
 }
 
-export async function registerRoutes(app: Express): Promise<Server> {
+export async function registerRoutes(app: Express): Promise<Express> {
   const signalParser = new AdvancedSignalParser();
   const tradeDispatcher = new TradeDispatcher();
 
@@ -467,5 +467,5 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Additional endpoints would be added here...
 
-  return app as any;
+  return app;
 }
