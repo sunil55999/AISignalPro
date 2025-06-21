@@ -1,4 +1,5 @@
 import express from "express";
+import { loadConfig, getConfig } from "../shared/config.js";
 import { createServer } from "http";
 import session from "express-session";
 import MemoryStore from "memorystore";
@@ -132,11 +133,18 @@ function log(message: string) {
     }));
   });
 
+  // Load configuration
+  console.log("Loading system configuration...");
+  const config = loadConfig();
+  const systemConfig = getConfig('system');
+  
   const PORT = process.env.PORT || 5000;
   server.listen(PORT, "0.0.0.0", () => {
     log(`serving on port ${PORT}`);
-    log(`Health check: http://localhost:${PORT}/health`);
-    log(`WebSocket server: ws://localhost:${PORT}/ws/parser`);
+    log(`Health check: ${systemConfig.api_base_url}/health`);
+    log(`WebSocket server: ${systemConfig.websocket_url}/parser`);
+    log(`Admin panel: ${systemConfig.admin_panel_url}`);
+    log(`Environment: ${systemConfig.environment}`);
   });
 })();
 

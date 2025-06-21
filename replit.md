@@ -82,6 +82,57 @@ Telegram Signals → Web Dashboard → Signal Parser → Risk Management → MT5
 - `user_settings` - Individual risk management and trading preferences
 - `alerts` - Notification system for important events
 
+## 🔧 Centralized Configuration System
+
+### Configuration Files
+- **env.json**: Main configuration file with all system settings
+- **.env**: Environment-specific overrides and secrets
+- **shared/config.ts**: TypeScript configuration loader
+- **desktop-app/config_loader.py**: Python configuration loader
+
+### Configuration Sections
+- **system**: Basic system URLs and environment settings
+- **admin**: Admin user credentials and settings
+- **mt5**: MetaTrader 5 paths and trading parameters
+- **telegram**: Telegram bot configuration
+- **parser**: Signal parsing settings and rules
+- **risk_management**: Trading risk controls
+- **alerts**: Notification preferences
+- **sync**: Auto-sync configuration
+- **logging**: System logging settings
+- **security**: Security and authentication settings
+
+### Environment Variable Overrides
+Critical settings can be overridden via environment variables:
+```bash
+# Override admin credentials
+ADMIN_USERNAME=your_admin_user
+ADMIN_PASSWORD=your_secure_password
+
+# Override API endpoints
+API_BASE_URL=https://your-domain.com
+
+# Override MT5 paths
+MT5_TERMINAL_PATH="C:\\Your\\MT5\\Path\\terminal64.exe"
+MT5_SIGNALS_FILE="C:\\Your\\Signals\\signals.json"
+
+# Override Telegram settings
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
+```
+
+### Configuration API Endpoints
+- `GET /api/config/:section` - Get configuration section
+- `PUT /api/config/:section` - Update configuration section
+- `GET /api/config/export/:service` - Export service-specific config
+
+### Service Configuration Loading
+All services now load from the centralized configuration:
+- **TypeScript/Node.js**: Uses `shared/config.ts`
+- **Python services**: Uses `desktop-app/config_loader.py`
+- **Frontend**: Accesses via API endpoints
+
+
 ## 🧠 Advanced Signal Processing Engine
 
 ### AI-Powered Parser Features
@@ -564,6 +615,57 @@ Project Evolution Timeline:
 - June 21, 2025: AUTO SYNC MODULE: Created auto_sync.py for automatic cloud synchronization - pulls strategy updates every 60 seconds, pushes system status, manages symbol mapping and stealth configs with comprehensive logging
 - June 21, 2025: PARSER UPLOAD SYSTEM: Implemented POST /api/parser/push endpoint with multer file upload, WebSocket broadcasting to terminals, database logging with file hash and deploy timestamp, complete deployment tracking
 - June 21, 2025: SIGNAL REPLAY FUNCTIONALITY: Added replay buttons to signal displays in UserDashboard.tsx, created dedicated Signals.tsx component with filtering/search, implemented POST /api/signal/replay endpoint that writes to signal files for desktop app pickup with status tracking
+- June 21, 2025: CENTRALIZED CONFIGURATION SYSTEM: Created env.json with all system settings, shared/config.ts for TypeScript services, config_loader.py for Python services, configuration management API endpoints, and ConfigManager.tsx UI component for admin configuration control
+
+## 🔧 Centralized Configuration System
+
+### Configuration Files
+- **env.json**: Main configuration file with all system settings
+- **.env**: Environment-specific overrides and secrets
+- **shared/config.ts**: TypeScript configuration loader
+- **desktop-app/config_loader.py**: Python configuration loader
+
+### Configuration Sections
+- **system**: Basic system URLs and environment settings
+- **admin**: Admin user credentials and settings
+- **mt5**: MetaTrader 5 paths and trading parameters
+- **telegram**: Telegram bot configuration
+- **parser**: Signal parsing settings and rules
+- **risk_management**: Trading risk controls
+- **alerts**: Notification preferences
+- **sync**: Auto-sync configuration
+- **logging**: System logging settings
+- **security**: Security and authentication settings
+
+### Environment Variable Overrides
+Critical settings can be overridden via environment variables:
+```bash
+# Override admin credentials
+ADMIN_USERNAME=your_admin_user
+ADMIN_PASSWORD=your_secure_password
+
+# Override API endpoints
+API_BASE_URL=https://your-domain.com
+
+# Override MT5 paths
+MT5_TERMINAL_PATH="C:\\Your\\MT5\\Path\\terminal64.exe"
+MT5_SIGNALS_FILE="C:\\Your\\Signals\\signals.json"
+
+# Override Telegram settings
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
+```
+
+### Configuration API Endpoints
+- `GET /api/config/:section` - Get configuration section
+- `PUT /api/config/:section` - Update configuration section
+- `GET /api/config/export/:service` - Export service-specific config
+
+### Service Configuration Loading
+All services now load from the centralized configuration:
+- **TypeScript/Node.js**: Uses `shared/config.ts`
+- **Python services**: Uses `desktop-app/config_loader.py`
+- **Frontend**: Accesses via API endpoints
 ```
 
 ## 🎯 System Status & Health

@@ -7,6 +7,7 @@ import fs from "fs";
 import path from "path";
 import terminalRoutes from "../admin-panel/routes/terminal.js";
 import parserRoutes from "../admin-panel/routes/parser.js";
+import { getConfig, exportForService } from "../shared/config.js";
 import terminalRoutes from "../admin-panel/routes/terminal.js";
 
 // Advanced Signal Parser Class
@@ -1057,8 +1058,9 @@ export async function registerRoutes(app: Express): Promise<Express> {
       };
 
       // Write to signal file for desktop app pickup
+      const mt5Config = getConfig('mt5');
       const signalFilePath = path.join(process.cwd(), "mt5_signals.json");
-      const userSignalPath = path.join("C:", "TradingSignals", "user1.json");
+      const userSignalPath = mt5Config.signals_file;
 
       try {
         // Write to main signal file
@@ -1067,9 +1069,10 @@ export async function registerRoutes(app: Express): Promise<Express> {
         // Also write to user-specific file if it exists
         try {
           const userDir = path.dirname(userSignalPath);
-          if (fs.existsSync(userDir)) {
-            fs.writeFileSync(userSignalPath, JSON.stringify(replayData, null, 2));
+          if (!fs.existsSync(userDir)) {
+            fs.mkdirSync(userDir, { recursive: true });
           }
+          fs.writeFileSync(userSignalPath, JSON.stringify(replayData, null, 2));
         } catch (userFileError) {
           console.log("User signal file not accessible:", userFileError.message);
         }
@@ -1091,7 +1094,7 @@ export async function registerRoutes(app: Express): Promise<Express> {
             signal_action: signal.action,
             replay_timestamp: new Date().toISOString()
           },
-          userId: req.session?.user?.id || 1
+          userId: req.session?.user?.id || getConfig('admin').default_user_id
         });
 
         res.json({
@@ -1119,6 +1122,135 @@ export async function registerRoutes(app: Express): Promise<Express> {
       res.status(500).json({
         success: false,
         error: "Internal server error"
+      });
+    }
+  });
+
+  // Configuration management endpoints
+  app.get("/api/config/:section", async (req, res) => {
+    try {
+      const { section } = req.params;
+      
+      if (!req.session?.user) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
+      // Only allow admin users to access configuration
+      if (req.session.user.role !== 'admin') {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const validSections = ['system', 'mt5', 'telegram', 'parser', 'risk_management', 'alerts', 'sync', 'logging', 'security'];
+      
+      if (!validSections.includes(section)) {
+        return res.status(400).json({ error: "Invalid configuration section" });
+      }
+
+      const config = getConfig(section as any);
+      
+      // Sanitize sensitive data
+      if (section === 'telegram') {
+        const sanitized = { ...config };
+        if (sanitized.bot_token) {
+          sanitized.bot_token = sanitized.bot_token.replace(/.(?=.{4})/g, '*');
+        }
+        return res.json({ success: true, config: sanitized });
+      }
+
+      res.json({ success: true, config });
+
+    } catch (error) {
+      console.error("Configuration retrieval error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to retrieve configuration"
+      });
+    }
+  });
+
+  app.put("/api/config/:section", async (req, res) => {
+    try {
+      const { section } = req.params;
+      const updates = req.body;
+
+      if (!req.session?.user) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
+      // Only allow admin users to modify configuration
+      if (req.session.user.role !== 'admin') {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const validSections = ['mt5', 'telegram', 'parser', 'risk_management', 'alerts', 'sync', 'logging', 'security'];
+      
+      if (!validSections.includes(section)) {
+        return res.status(400).json({ error: "Invalid configuration section" });
+      }
+
+      // Prevent updating system and admin sections via API for security
+      if (['system', 'admin', 'database'].includes(section)) {
+        return res.status(403).json({ error: "This configuration section cannot be modified via API" });
+      }
+
+      // Update configuration
+      const { updateConfig } = await import("../shared/config.js");
+      updateConfig(section as any, updates);
+
+      // Log the configuration change
+      await storage.createAuditLog({
+        action: "config_update",
+        details: {
+          section: section,
+          updated_fields: Object.keys(updates),
+          timestamp: new Date().toISOString()
+        },
+        userId: req.session.user.id
+      });
+
+      res.json({
+        success: true,
+        message: `Configuration section '${section}' updated successfully`
+      });
+
+    } catch (error) {
+      console.error("Configuration update error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to update configuration"
+      });
+    }
+  });
+
+  // Export configuration for services
+  app.get("/api/config/export/:service", async (req, res) => {
+    try {
+      const { service } = req.params;
+
+      if (!req.session?.user) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
+      const validServices = ['mt5', 'telegram', 'parser', 'sync'];
+      
+      if (!validServices.includes(service)) {
+        return res.status(400).json({ error: "Invalid service" });
+      }
+
+      const config = exportForService(service as any);
+      
+      res.json({
+        success: true,
+        service: service,
+        config: config,
+        exported_at: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error("Configuration export error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to export configuration"
       });
     }
   });
