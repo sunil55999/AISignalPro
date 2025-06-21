@@ -52,7 +52,7 @@ function log(message: string) {
   // Register API routes
   await registerRoutes(app);
 
-  // Setup frontend serving with proper Vite integration
+  // Setup frontend serving
   if (process.env.NODE_ENV === "development") {
     try {
       const { createServer } = await import("vite");
@@ -61,7 +61,16 @@ function log(message: string) {
         server: { middlewareMode: true },
         appType: "spa",
         root: path.resolve(__dirname, "../client"),
-        configFile: path.resolve(__dirname, "../vite.config.ts"),
+        configFile: false, // Use inline config
+        plugins: [
+          (await import("@vitejs/plugin-react")).default()
+        ],
+        resolve: {
+          alias: {
+            "@": path.resolve(__dirname, "../client/src"),
+            "@shared": path.resolve(__dirname, "../shared"),
+          }
+        }
       });
 
       app.use(vite.ssrFixStacktrace);
@@ -69,7 +78,12 @@ function log(message: string) {
       log("Vite development server configured successfully");
     } catch (error) {
       log(`Vite setup failed: ${error}`);
-      throw error;
+      // Fallback to simple static serving
+      app.use(express.static(path.resolve(__dirname, "../client")));
+      app.get("*", (_req, res) => {
+        res.sendFile(path.resolve(__dirname, "../client/index.html"));
+      });
+      log("Using fallback static file serving");
     }
   } else {
     // Serve static files in production

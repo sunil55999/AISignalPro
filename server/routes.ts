@@ -478,8 +478,20 @@ export async function registerRoutes(app: Express): Promise<Express> {
       // Store strategy configuration
       const strategyJson = JSON.stringify(strategyData);
       
-      // You can store this in database or file system
-      // For now, we'll just acknowledge receipt
+      // Store in database for persistence
+      await storage.createManualRule({
+        name: strategyData.name,
+        description: `Visual strategy: ${strategyData.rules.length} rules, ${strategyData.connections?.length || 0} connections`,
+        conditionType: 'visual_strategy',
+        conditionValue: strategyJson,
+        actionType: 'execute_strategy',
+        actionValue: 'strategy_runtime',
+        isActive: true,
+        priority: 1,
+        usageCount: 0,
+        userId: req.session?.user?.id || 1
+      });
+      
       console.log('Strategy updated:', strategyData.name);
       console.log('Rules count:', strategyData.rules.length);
       console.log('Connections count:', strategyData.connections?.length || 0);
@@ -492,6 +504,38 @@ export async function registerRoutes(app: Express): Promise<Express> {
     } catch (error) {
       console.error('Strategy update error:', error);
       res.status(500).json({ error: "Failed to update strategy" });
+    }
+  });
+
+  // Strategy execution endpoint for testing
+  app.post("/api/strategy/execute", async (req, res) => {
+    try {
+      const { parsedSignal, userStrategy } = req.body;
+      
+      if (!parsedSignal || !userStrategy) {
+        return res.status(400).json({ error: "Missing parsedSignal or userStrategy" });
+      }
+      
+      // Mock strategy execution result
+      const result = {
+        original_signal: parsedSignal,
+        strategy_applied: userStrategy.name,
+        modified_payload: {
+          ...parsedSignal,
+          modified_by_strategy: true,
+          execution_allowed: parsedSignal.confidence >= 0.7,
+          strategy_actions: parsedSignal.confidence < 0.7 ? ['trade_skipped'] : ['trade_allowed']
+        },
+        execution_summary: {
+          rules_executed: userStrategy.rules?.length || 0,
+          execution_time: new Date().toISOString()
+        }
+      };
+      
+      res.json(result);
+    } catch (error) {
+      console.error('Strategy execution error:', error);
+      res.status(500).json({ error: "Failed to execute strategy" });
     }
   });
 

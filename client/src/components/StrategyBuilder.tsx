@@ -332,6 +332,44 @@ export const StrategyBuilder: React.FC = () => {
     }
   };
 
+  const testStrategy = async () => {
+    const strategyJSON = generateStrategyJSON();
+    
+    // Sample signal for testing
+    const testSignal = {
+      pair: 'EURUSD',
+      action: 'buy',
+      entry: 1.1000,
+      sl: 1.0950,
+      tp: 1.1100,
+      confidence: 0.65, // Low confidence to test rules
+      lot_size: 0.1
+    };
+    
+    try {
+      const response = await fetch('/api/strategy/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          parsedSignal: testSignal,
+          userStrategy: strategyJSON
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        alert(`Test Result:\nExecution Allowed: ${result.modified_payload.execution_allowed}\nActions: ${result.modified_payload.strategy_actions.join(', ')}`);
+      } else {
+        alert('Strategy test failed');
+      }
+    } catch (error) {
+      console.error('Error testing strategy:', error);
+      alert('Error testing strategy');
+    }
+  };
+
   const clearCanvas = () => {
     setNodes([]);
     setEdges([]);
@@ -346,6 +384,9 @@ export const StrategyBuilder: React.FC = () => {
             <Button onClick={clearCanvas} variant="outline" size="sm">
               <Trash2 className="w-4 h-4 mr-2" />
               Clear
+            </Button>
+            <Button onClick={testStrategy} variant="outline" size="sm">
+              Test Strategy
             </Button>
             <Button onClick={saveStrategy} size="sm">
               <Save className="w-4 h-4 mr-2" />
