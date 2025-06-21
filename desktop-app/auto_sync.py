@@ -65,7 +65,7 @@ class AutoSyncManager:
     def __init__(self, config_path: str = "env.json"):
         self.config = self._load_config(config_path)
         self.api_base = self.config.get("API_BASE_URL", "http://localhost:5000")
-        self.sync_interval = 60  # 60 seconds
+        self.sync_interval = 60  # Pull every 60 seconds as requested
         self.api_key = self.config.get("API_KEY", "")
         
         # Database for tracking sync state
@@ -82,12 +82,14 @@ class AutoSyncManager:
         # Cached configurations
         self.current_strategy = None
         self.current_symbols = {}
+        self.stealth_config = {}
+        self.lot_settings = {}
         self.error_counts = {"parser": 0, "mt5": 0, "api": 0}
         
         # Initialize MT5 connection
         self._init_mt5()
         
-        logger.info("AutoSyncManager initialized")
+        logger.info("AutoSyncManager initialized with 60-second sync interval")
     
     def _load_config(self, config_path: str) -> Dict:
         """Load configuration from JSON file"""
@@ -296,9 +298,222 @@ class AutoSyncManager:
             return False
     
     def _pull_stealth_config(self) -> bool:
-        """Pull stealth and lot settings from API"""
+        """Pull updated stealth configuration from API"""
         try:
             headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+            
+            response = requests.get(
+                f"{self.api_base}/api/admin/stealth-config",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                stealth_data = response.json()
+                
+                if stealth_data != self.stealth_config:
+                    self.stealth_config = stealth_data
+                    self._save_config_cache("stealth_config", json.dumps(stealth_data))
+                    logger.info("Stealth configuration updated from cloud")
+                
+                return True
+            else:
+                logger.error(f"Failed to pull stealth config: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error pulling stealth config: {e}")
+            self._track_error("api_pull", str(e), "stealth_config")
+            return False
+    
+    def _pull_lot_settings(self) -> bool:
+        """Pull updated lot settings from API"""
+        try:
+            headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+            
+            response = requests.get(
+                f"{self.api_base}/api/admin/lot-settings",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                lot_data = response.json()
+                
+                if lot_data != self.lot_settings:
+                    self.lot_settings = lot_data
+                    self._save_config_cache("lot_settings", json.dumps(lot_data))
+                    logger.info("Lot settings updated from cloud")
+                
+                return True
+            else:
+                logger.error(f"Failed to pull lot settings: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error pulling lot settings: {e}")
+            self._track_error("api_pull", str(e), "lot_settings")
+            return False
+    
+    def _push_system_status(self) -> bool:
+        """Push MT5 connection status, parser health, error count to cloud API"""
+        try:
+            # Collect system status
+            status = self._collect_system_status()
+            
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}" if self.api_key else ""
+            }
+            
+            # Push to cloud API
+            response = requests.post(
+                f"{self.api_base}/api/system/status",
+                json=asdict(status),
+                headers=headers,
+                timeout=15
+            )
+            
+            if response.status_code == 200:
+                logger.debug("System status pushed successfully")
+                return True
+            else:
+                logger.error(f"Failed to push system status: {response.status_code}")
+                self._track_error("api_push", f"HTTP {response.status_code}", "system_status")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error pushing system status: {e}")
+            self._track_error("api_push", str(e), "system_status")
+            return False
+    
+    def _collect_system_status(self) -> SystemStatus:
+        """Collect current system status"""
+        # MT5 status
+        mt5_connected = False
+        mt5_account = None
+        mt5_balance = 0.0
+        mt5_equity = 0.0
+        mt5_margin_free = 0.0
+        active_trades = 0
+        
+        try:
+            if mt5.initialize():
+                account_info = mt5.account_info()
+                if account_info:
+                    mt5_connected = True
+                    mt5_account = account_info.login
+                    mt5_balance = account_info.balance
+                    mt5_equity = account_info.equity
+                    mt5_margin_free = account_info.margin_free
+                
+                # Count active trades
+                positions = mt5.positions_get()
+                active_trades = len(positions) if positions else 0
+        except Exception as e:
+            logger.error(f"Error collecting MT5 status: {e}")
+            self._track_error("mt5_status", str(e), "system_collect")
+        
+        # Parser health check
+        parser_health = self._check_parser_health()
+        
+        # Error counts
+        error_count_24h = self._get_error_count_24h()
+        
+        # Signal statistics
+        total_signals_today = self._get_signals_today()
+        last_signal_time = self._get_last_signal_time()
+        
+        # System uptime
+        uptime_seconds = int((datetime.now() - self.start_time).total_seconds())
+        
+        return SystemStatus(
+            mt5_connected=mt5_connected,
+            mt5_account=mt5_account,
+            mt5_balance=mt5_balance,
+            mt5_equity=mt5_equity,
+            mt5_margin_free=mt5_margin_free,
+            parser_health=parser_health,
+            error_count_24h=error_count_24h,
+            last_signal_time=last_signal_time,
+            active_trades=active_trades,
+            total_signals_today=total_signals_today,
+            uptime_seconds=uptime_seconds,
+            version="1.0.0",
+            timestamp=datetime.now()
+        )
+    
+    def _log_sync_attempt(self, details: Dict[str, Any]):
+        """Log sync attempts with timestamps"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                INSERT INTO sync_history (sync_type, status, details)
+                VALUES (?, ?, ?)
+            """, (
+                "full_sync",
+                "completed" if all(details.values()) else "partial",
+                json.dumps(details)
+            ))
+            
+            conn.commit()
+            conn.close()
+            
+            # Log to file with timestamp
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logger.info(f"[{timestamp}] Sync attempt: {details}")
+            
+        except Exception as e:
+            logger.error(f"Failed to log sync attempt: {e}")
+    
+    def _check_parser_health(self) -> str:
+        """Check parser health status"""
+        try:
+            # Check error rates
+            error_count = self._get_error_count_24h()
+            
+            if error_count == 0:
+                return "healthy"
+            elif error_count < 5:
+                return "warning"
+            else:
+                return "error"
+                
+        except Exception:
+            return "error"
+    
+    def _get_error_count_24h(self) -> int:
+        """Get error count in last 24 hours"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT COUNT(*) FROM error_tracking 
+                WHERE last_seen > datetime('now', '-24 hours')
+            """)
+            
+            result = cursor.fetchone()
+            conn.close()
+            
+            return result[0] if result else 0
+            
+        except Exception:
+            return 0
+    
+    def _get_signals_today(self) -> int:
+        """Get total signals processed today"""
+        # This would connect to your signal database
+        # For now, return a placeholder
+        return 0
+    
+    def _get_last_signal_time(self) -> Optional[datetime]:
+        """Get timestamp of last signal processed"""
+        # This would connect to your signal database
+        # For now, return None
+        return None
             
             response = requests.get(
                 f"{self.api_base}/api/admin/stealth-settings",

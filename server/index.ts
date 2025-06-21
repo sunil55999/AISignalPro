@@ -47,15 +47,34 @@ function log(message: string) {
   // Register API routes first
   await registerRoutes(app);
 
+  // Add basic health check route
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   // Setup frontend serving
   if (process.env.NODE_ENV === "development") {
-    // Simple static file serving for development
-    app.use(express.static(path.resolve(__dirname, "../client")));
-    
-    // Fallback to index.html for SPA routing
-    app.get("*", (_req, res) => {
-      res.sendFile(path.resolve(__dirname, "../client/index.html"));
-    });
+    try {
+      const { createServer } = await import("vite");
+      
+      const vite = await createServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+        root: path.resolve(__dirname, "../client"),
+        configFile: path.resolve(__dirname, "../vite.config.ts"),
+      });
+
+      app.use(vite.ssrFixStacktrace);
+      app.use(vite.middlewares);
+      log("Vite middleware configured successfully");
+    } catch (error) {
+      log(`Vite setup failed: ${error}`);
+      // Fallback to static serving
+      app.use(express.static(path.resolve(__dirname, "../client")));
+      app.get("*", (_req, res) => {
+        res.sendFile(path.resolve(__dirname, "../client/index.html"));
+      });
+    }
   } else {
     // Serve static files in production
     const clientPath = path.resolve(__dirname, "../dist/public");
