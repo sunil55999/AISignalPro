@@ -3,6 +3,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useState, useEffect, createContext, useContext } from "react";
 import StrategyBuilder from "./components/StrategyBuilder";
+import Terminals from "./components/dashboard/Terminals";
 
 // Simple Auth Context
 const AuthContext = createContext<{
@@ -166,6 +167,7 @@ function Dashboard() {
             <nav className="flex gap-4">
               <a href="/" className="text-gray-300 hover:text-white transition-colors">Dashboard</a>
               <a href="/strategy-builder" className="text-gray-300 hover:text-white transition-colors">Strategy Builder</a>
+              <a href="/terminals" className="text-gray-300 hover:text-white transition-colors">Terminals</a>
             </nav>
           </div>
           <div className="flex items-center gap-4">
@@ -250,6 +252,25 @@ function AuthenticatedRouter() {
       <Route path="/strategy-builder">
         <div className="h-screen">
           <StrategyBuilder />
+        </div>
+      </Route>
+      <Route path="/terminals">
+        <div className="min-h-screen bg-gray-900 text-white">
+          <div className="bg-gray-800 p-4 border-b border-gray-700">
+            <div className="flex justify-between items-center max-w-6xl mx-auto">
+              <div className="flex items-center gap-6">
+                <h1 className="text-xl font-bold">AI Trading Signal Parser</h1>
+                <nav className="flex gap-4">
+                  <a href="/" className="text-gray-300 hover:text-white transition-colors">Dashboard</a>
+                  <a href="/strategy-builder" className="text-gray-300 hover:text-white transition-colors">Strategy Builder</a>
+                  <a href="/terminals" className="text-white font-medium">Terminals</a>
+                </nav>
+              </div>
+            </div>
+          </div>
+          <div className="max-w-6xl mx-auto p-6">
+            <Terminals />
+          </div>
         </div>
       </Route>
       <Route component={() => <div>404 - Page not found</div>} />

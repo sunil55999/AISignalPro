@@ -636,5 +636,108 @@ export async function registerRoutes(app: Express): Promise<Express> {
     }
   });
 
+  // Terminal management endpoints
+  app.get("/api/terminals", async (req, res) => {
+    try {
+      // Mock terminal data for demonstration
+      const terminals = [
+        {
+          id: 'terminal-001',
+          name: 'Desktop Terminal Alpha',
+          lastPing: new Date(Date.now() - 30000),
+          mt5AccountId: 123456789,
+          mt5Connected: true,
+          stealthMode: true,
+          retryQueueSize: 2,
+          ipAddress: '192.168.1.100',
+          version: '2.1.4',
+          status: 'online',
+          errorCount24h: 1,
+          totalSignalsToday: 15,
+          activeTrades: 3,
+          balance: 10000.50,
+          equity: 10125.30,
+          marginFree: 8500.00,
+          minutesSinceLastPing: 0,
+          lastPingFormatted: new Date(Date.now() - 30000).toISOString()
+        },
+        {
+          id: 'terminal-002',
+          name: 'VPS Terminal Beta',
+          lastPing: new Date(Date.now() - 120000),
+          mt5AccountId: 987654321,
+          mt5Connected: true,
+          stealthMode: false,
+          retryQueueSize: 0,
+          ipAddress: '10.0.1.55',
+          version: '2.1.3',
+          status: 'warning',
+          errorCount24h: 5,
+          totalSignalsToday: 8,
+          activeTrades: 1,
+          balance: 5000.00,
+          equity: 4980.25,
+          marginFree: 4200.10,
+          minutesSinceLastPing: 2,
+          lastPingFormatted: new Date(Date.now() - 120000).toISOString()
+        },
+        {
+          id: 'terminal-003',
+          name: 'Backup Terminal Gamma',
+          lastPing: new Date(Date.now() - 600000),
+          mt5Connected: false,
+          stealthMode: true,
+          retryQueueSize: 7,
+          ipAddress: '172.16.0.10',
+          version: '2.0.8',
+          status: 'offline',
+          errorCount24h: 0,
+          totalSignalsToday: 0,
+          activeTrades: 0,
+          minutesSinceLastPing: 10,
+          lastPingFormatted: new Date(Date.now() - 600000).toISOString()
+        }
+      ];
+
+      res.json({
+        success: true,
+        terminals,
+        totalTerminals: terminals.length,
+        onlineTerminals: terminals.filter(t => t.status === 'online').length,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch terminals" });
+    }
+  });
+
+  app.get("/api/terminals/stats/summary", async (req, res) => {
+    try {
+      const stats = {
+        totalTerminals: 3,
+        onlineTerminals: 1,
+        warningTerminals: 1,
+        offlineTerminals: 1,
+        totalMT5Accounts: 2,
+        connectedMT5: 2,
+        stealthModeActive: 2,
+        totalRetryQueue: 9,
+        totalSignalsToday: 23,
+        totalActiveTrades: 4,
+        totalErrors24h: 6,
+        totalBalance: 15000.50,
+        totalEquity: 15105.55
+      };
+
+      res.json({
+        success: true,
+        stats,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch terminal stats" });
+    }
+  });
+
   return app;
 }
