@@ -6,7 +6,8 @@ import {
   Message, InsertMessage, Trade, InsertTrade, ManualRule, InsertManualRule,
   TrainingData, InsertTrainingData, UserSettings, InsertUserSettings,
   AuditLog, InsertAuditLog, ProviderStats, InsertProviderStats,
-  ParserDeployment, InsertParserDeployment
+  ParserDeployment, InsertParserDeployment, ApiKey, InsertApiKey,
+  SyncRequest, InsertSyncRequest
 } from "../shared/schema.js";
 import { eq, and, gte, lte, desc } from "drizzle-orm";
 
@@ -295,6 +296,80 @@ export class DatabaseStorage {
 
   async updateSignal(id: number, updates: Partial<InsertSignal>): Promise<Signal | null> {
     const result = await this.db.update(schema.signals).set(updates).where(eq(schema.signals.id, id)).returning();
+    return result[0] || null;
+  }
+
+  // API Key operations
+  async createApiKey(apiKey: InsertApiKey): Promise<ApiKey> {
+    const result = await this.db.insert(schema.apiKeys).values(apiKey).returning();
+    return result[0];
+  }
+
+  async getApiKeys(): Promise<ApiKey[]> {
+    return await this.db.select().from(schema.apiKeys).orderBy(desc(schema.apiKeys.createdAt));
+  }
+
+  async getApiKeysByUserId(userId: number): Promise<ApiKey[]> {
+    return await this.db.select().from(schema.apiKeys).where(eq(schema.apiKeys.userId, userId));
+  }
+
+  async getApiKeyById(id: number): Promise<ApiKey | null> {
+    const keys = await this.db.select().from(schema.apiKeys).where(eq(schema.apiKeys.id, id));
+    return keys[0] || null;
+  }
+
+  async getApiKeyByPrefix(prefix: string): Promise<ApiKey | null> {
+    const keys = await this.db.select().from(schema.apiKeys).where(eq(schema.apiKeys.keyPrefix, prefix));
+    return keys[0] || null;
+  }
+
+  async updateApiKey(id: number, updates: Partial<InsertApiKey>): Promise<ApiKey | null> {
+    const result = await this.db.update(schema.apiKeys).set({ 
+      ...updates, 
+      updatedAt: new Date() 
+    }).where(eq(schema.apiKeys.id, id)).returning();
+    return result[0] || null;
+  }
+
+  async deleteApiKey(id: number): Promise<boolean> {
+    const result = await this.db.delete(schema.apiKeys).where(eq(schema.apiKeys.id, id));
+    return result.rowCount > 0;
+  }
+
+  async updateApiKeyLastUsed(id: number): Promise<void> {
+    await this.db.update(schema.apiKeys).set({ 
+      lastUsed: new Date(),
+      updatedAt: new Date()
+    }).where(eq(schema.apiKeys.id, id));
+  }
+
+  // Sync Request operations
+  async createSyncRequest(request: InsertSyncRequest): Promise<SyncRequest> {
+    const result = await this.db.insert(schema.syncRequests).values(request).returning();
+    return result[0];
+  }
+
+  async getSyncRequestsByUser(userId: number, limit: number = 100): Promise<SyncRequest[]> {
+    return await this.db.select().from(schema.syncRequests)
+      .where(eq(schema.syncRequests.userId, userId))
+      .orderBy(desc(schema.syncRequests.createdAt))
+      .limit(limit);
+  }
+
+  async getSyncRequestByRequestId(requestId: string): Promise<SyncRequest | null> {
+    const requests = await this.db.select().from(schema.syncRequests).where(eq(schema.syncRequests.requestId, requestId));
+    return requests[0] || null;
+  }
+
+  async getSyncRequestsByApiKey(apiKeyId: number, limit: number = 100): Promise<SyncRequest[]> {
+    return await this.db.select().from(schema.syncRequests)
+      .where(eq(schema.syncRequests.apiKeyId, apiKeyId))
+      .orderBy(desc(schema.syncRequests.createdAt))
+      .limit(limit);
+  }
+
+  async updateSyncRequest(id: number, updates: Partial<InsertSyncRequest>): Promise<SyncRequest | null> {
+    const result = await this.db.update(schema.syncRequests).set(updates).where(eq(schema.syncRequests.id, id)).returning();
     return result[0] || null;
   }
 

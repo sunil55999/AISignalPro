@@ -8,6 +8,8 @@ import path from "path";
 import terminalRoutes from "../admin-panel/routes/terminal.js";
 import parserRoutes from "../admin-panel/routes/parser.js";
 import { getConfig, exportForService } from "../shared/config.js";
+import { authenticateSession, authenticateSync, requirePermission, logSyncRequest, rateLimitApiKey } from "./middleware/auth.js";
+import { generateApiKey, generateJWTToken } from "../shared/auth.js";
 import terminalRoutes from "../admin-panel/routes/terminal.js";
 
 // Advanced Signal Parser Class
@@ -1012,10 +1014,12 @@ export async function registerRoutes(app: Express): Promise<Express> {
     }
   });
 
-  // Register terminal management routes
+  // Register terminal management routes with sync auth
+  app.use('/api/sync/terminal', authenticateSync, rateLimitApiKey, logSyncRequest, requirePermission('sync'), terminalRoutes);
   app.use(terminalRoutes);
 
-  // Register parser management routes
+  // Register parser management routes with sync auth
+  app.use('/api/sync/parser', authenticateSync, rateLimitApiKey, logSyncRequest, requirePermission('parser'), parserRoutes);
   app.use(parserRoutes);
 
   // Signal replay endpoint
@@ -1126,8 +1130,244 @@ export async function registerRoutes(app: Express): Promise<Express> {
     }
   });
 
+  // API Key management endpoints
+  app.get("/api/auth/api-keys", authenticateSession, async (req, res) => {
+    try {
+      if (!req.session?.user) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
+      const keys = await storage.getApiKeysByUserId(req.session.user.id);
+      
+      // Sanitize response - never send actual keys
+      const sanitizedKeys = keys.map(key => ({
+        id: key.id,
+        keyName: key.keyName,
+        keyPrefix: key.keyPrefix,
+        permissions: key.permissions,
+        isActive: key.isActive,
+        lastUsed: key.lastUsed,
+        expiresAt: key.expiresAt,
+        rateLimit: key.rateLimit,
+        createdAt: key.createdAt
+      }));
+
+      res.json({
+        success: true,
+        apiKeys: sanitizedKeys
+      });
+
+    } catch (error) {
+      console.error("API keys retrieval error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to retrieve API keys"
+      });
+    }
+  });
+
+  app.post("/api/auth/api-keys", authenticateSession, async (req, res) => {
+    try {
+      if (!req.session?.user) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
+      const { keyName, permissions, expiresAt, rateLimit, ipWhitelist } = req.body;
+
+      if (!keyName || !permissions || !Array.isArray(permissions)) {
+        return res.status(400).json({
+          success: false,
+          error: "Key name and permissions are required"
+        });
+      }
+
+      // Generate new API key
+      const { key, hash, prefix } = generateApiKey();
+
+      const apiKey = await storage.createApiKey({
+        userId: req.session.user.id,
+        keyName,
+        keyHash: hash,
+        keyPrefix: prefix,
+        permissions,
+        isActive: true,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        rateLimit: rateLimit || 1000,
+        ipWhitelist: ipWhitelist || []
+      });
+
+      // Log API key creation
+      await storage.createAuditLog({
+        action: "api_key_created",
+        details: {
+          api_key_id: apiKey.id,
+          key_name: keyName,
+          permissions: permissions,
+          expires_at: expiresAt
+        },
+        userId: req.session.user.id
+      });
+
+      res.json({
+        success: true,
+        message: "API key created successfully",
+        apiKey: {
+          id: apiKey.id,
+          key: key, // Only return the actual key once during creation
+          keyName: apiKey.keyName,
+          keyPrefix: apiKey.keyPrefix,
+          permissions: apiKey.permissions,
+          expiresAt: apiKey.expiresAt,
+          rateLimit: apiKey.rateLimit
+        }
+      });
+
+    } catch (error) {
+      console.error("API key creation error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to create API key"
+      });
+    }
+  });
+
+  app.put("/api/auth/api-keys/:id", authenticateSession, async (req, res) => {
+    try {
+      if (!req.session?.user) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
+      const keyId = parseInt(req.params.id);
+      const { keyName, permissions, isActive, expiresAt, rateLimit, ipWhitelist } = req.body;
+
+      // Verify ownership
+      const existingKey = await storage.getApiKeyById(keyId);
+      if (!existingKey || existingKey.userId !== req.session.user.id) {
+        return res.status(404).json({
+          success: false,
+          error: "API key not found"
+        });
+      }
+
+      const updatedKey = await storage.updateApiKey(keyId, {
+        keyName: keyName || existingKey.keyName,
+        permissions: permissions || existingKey.permissions,
+        isActive: isActive !== undefined ? isActive : existingKey.isActive,
+        expiresAt: expiresAt ? new Date(expiresAt) : existingKey.expiresAt,
+        rateLimit: rateLimit || existingKey.rateLimit,
+        ipWhitelist: ipWhitelist || existingKey.ipWhitelist
+      });
+
+      await storage.createAuditLog({
+        action: "api_key_updated",
+        details: {
+          api_key_id: keyId,
+          changes: req.body
+        },
+        userId: req.session.user.id
+      });
+
+      res.json({
+        success: true,
+        message: "API key updated successfully",
+        apiKey: {
+          id: updatedKey!.id,
+          keyName: updatedKey!.keyName,
+          keyPrefix: updatedKey!.keyPrefix,
+          permissions: updatedKey!.permissions,
+          isActive: updatedKey!.isActive,
+          expiresAt: updatedKey!.expiresAt,
+          rateLimit: updatedKey!.rateLimit
+        }
+      });
+
+    } catch (error) {
+      console.error("API key update error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to update API key"
+      });
+    }
+  });
+
+  app.delete("/api/auth/api-keys/:id", authenticateSession, async (req, res) => {
+    try {
+      if (!req.session?.user) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
+      const keyId = parseInt(req.params.id);
+
+      // Verify ownership
+      const existingKey = await storage.getApiKeyById(keyId);
+      if (!existingKey || existingKey.userId !== req.session.user.id) {
+        return res.status(404).json({
+          success: false,
+          error: "API key not found"
+        });
+      }
+
+      await storage.deleteApiKey(keyId);
+
+      await storage.createAuditLog({
+        action: "api_key_deleted",
+        details: {
+          api_key_id: keyId,
+          key_name: existingKey.keyName
+        },
+        userId: req.session.user.id
+      });
+
+      res.json({
+        success: true,
+        message: "API key deleted successfully"
+      });
+
+    } catch (error) {
+      console.error("API key deletion error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to delete API key"
+      });
+    }
+  });
+
+  // Sync request logs
+  app.get("/api/auth/sync-logs", authenticateSession, async (req, res) => {
+    try {
+      if (!req.session?.user) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
+      const limit = parseInt(req.query.limit as string) || 100;
+      const logs = await storage.getSyncRequestsByUser(req.session.user.id, limit);
+
+      res.json({
+        success: true,
+        logs: logs.map(log => ({
+          id: log.id,
+          requestId: log.requestId,
+          endpoint: log.endpoint,
+          method: log.method,
+          timestamp: log.timestamp,
+          responseStatus: log.responseStatus,
+          processingTime: log.processingTime,
+          ipAddress: log.ipAddress,
+          createdAt: log.createdAt
+        }))
+      });
+
+    } catch (error) {
+      console.error("Sync logs retrieval error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to retrieve sync logs"
+      });
+    }
+  });
+
   // Configuration management endpoints
-  app.get("/api/config/:section", async (req, res) => {
+  app.get("/api/config/:section", authenticateSession, async (req, res) => {
     try {
       const { section } = req.params;
       
@@ -1168,7 +1408,7 @@ export async function registerRoutes(app: Express): Promise<Express> {
     }
   });
 
-  app.put("/api/config/:section", async (req, res) => {
+  app.put("/api/config/:section", authenticateSession, async (req, res) => {
     try {
       const { section } = req.params;
       const updates = req.body;
@@ -1223,7 +1463,7 @@ export async function registerRoutes(app: Express): Promise<Express> {
   });
 
   // Export configuration for services
-  app.get("/api/config/export/:service", async (req, res) => {
+  app.get("/api/config/export/:service", authenticateSession, async (req, res) => {
     try {
       const { service } = req.params;
 

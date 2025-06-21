@@ -616,6 +616,7 @@ Project Evolution Timeline:
 - June 21, 2025: PARSER UPLOAD SYSTEM: Implemented POST /api/parser/push endpoint with multer file upload, WebSocket broadcasting to terminals, database logging with file hash and deploy timestamp, complete deployment tracking
 - June 21, 2025: SIGNAL REPLAY FUNCTIONALITY: Added replay buttons to signal displays in UserDashboard.tsx, created dedicated Signals.tsx component with filtering/search, implemented POST /api/signal/replay endpoint that writes to signal files for desktop app pickup with status tracking
 - June 21, 2025: CENTRALIZED CONFIGURATION SYSTEM: Created env.json with all system settings, shared/config.ts for TypeScript services, config_loader.py for Python services, configuration management API endpoints, and ConfigManager.tsx UI component for admin configuration control
+- June 21, 2025: SECURE SYNC AUTHENTICATION: Implemented HMAC-based API authentication with JWT tokens, per-user API keys stored in database, timestamped requests with nonce protection, rate limiting, IP whitelisting, and comprehensive sync request logging for all desktop-admin panel communications
 
 ## 🔧 Centralized Configuration System
 

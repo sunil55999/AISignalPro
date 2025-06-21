@@ -207,6 +207,40 @@ export const parserDeployments = pgTable("parser_deployments", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const apiKeys = pgTable("api_keys", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  keyName: text("key_name").notNull(),
+  keyHash: text("key_hash").notNull(), // HMAC hash of the API key
+  keyPrefix: text("key_prefix").notNull(), // First 8 chars for identification
+  permissions: text("permissions").array().default([]), // ["sync", "parser", "signals", "admin"]
+  isActive: boolean("is_active").default(true),
+  lastUsed: timestamp("last_used"),
+  expiresAt: timestamp("expires_at"),
+  ipWhitelist: text("ip_whitelist").array().default([]),
+  rateLimit: integer("rate_limit").default(1000), // requests per hour
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const syncRequests = pgTable("sync_requests", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  apiKeyId: integer("api_key_id").references(() => apiKeys.id),
+  requestId: text("request_id").notNull().unique(),
+  endpoint: text("endpoint").notNull(),
+  method: text("method").notNull(),
+  timestamp: timestamp("timestamp").notNull(),
+  nonce: text("nonce").notNull(),
+  signature: text("signature").notNull(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  requestSize: integer("request_size"),
+  responseStatus: integer("response_status"),
+  processingTime: integer("processing_time_ms"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
@@ -272,6 +306,17 @@ export const insertParserDeploymentSchema = createInsertSchema(parserDeployments
   deployTimestamp: true,
 });
 
+export const insertApiKeySchema = createInsertSchema(apiKeys).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertSyncRequestSchema = createInsertSchema(syncRequests).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Type exports
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -305,3 +350,9 @@ export type InsertProviderStats = z.infer<typeof insertProviderStatsSchema>;
 
 export type ParserDeployment = typeof parserDeployments.$inferSelect;
 export type InsertParserDeployment = z.infer<typeof insertParserDeploymentSchema>;
+
+export type ApiKey = typeof apiKeys.$inferSelect;
+export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
+
+export type SyncRequest = typeof syncRequests.$inferSelect;
+export type InsertSyncRequest = z.infer<typeof insertSyncRequestSchema>;
